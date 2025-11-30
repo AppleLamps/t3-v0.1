@@ -86,28 +86,29 @@ export class ModelSelector {
 
     /**
      * Render model list
+     * @param {string} [overrideSelectedModel] - Optional model ID to use instead of state
      * @private
      */
-    _renderModelList() {
+    _renderModelList(overrideSelectedModel) {
         const settings = stateManager.settings;
         // Default to all models enabled if enabledModels is undefined, null, empty, or contains no valid IDs
         const enabledModelIds = settings?.enabledModels;
         const validModelIds = MODELS.map(m => m.id);
-        const hasValidEnabled = enabledModelIds && enabledModelIds.length > 0 && 
+        const hasValidEnabled = enabledModelIds && enabledModelIds.length > 0 &&
             enabledModelIds.some(id => validModelIds.includes(id));
-        const enabledModels = hasValidEnabled 
+        const enabledModels = hasValidEnabled
             ? MODELS.filter(m => enabledModelIds.includes(m.id))
             : MODELS; // Show all models by default
-        const selectedModel = settings?.selectedModel;
+        const selectedModel = overrideSelectedModel ?? settings?.selectedModel;
 
         let html = '';
         for (const model of enabledModels) {
             const isSelected = model.id === selectedModel;
             const hasImageCap = model.capabilities?.includes('image');
             const hasVisionCap = model.capabilities?.includes('vision');
-            
+
             html += `
-                <button type="button" data-model-id="${model.id}" 
+                <button type="button" data-model-id="${model.id}"
                     class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-lamp-input transition-colors ${isSelected ? 'bg-lamp-input' : ''}">
                     <div class="flex-1">
                         <div class="text-sm font-medium flex items-center gap-2">
@@ -134,9 +135,9 @@ export class ModelSelector {
         // Default to all models enabled if enabledModels is undefined, null, empty, or contains no valid IDs
         const enabledModelIds = settings?.enabledModels;
         const validModelIds = MODELS.map(m => m.id);
-        const hasValidEnabled = enabledModelIds && enabledModelIds.length > 0 && 
+        const hasValidEnabled = enabledModelIds && enabledModelIds.length > 0 &&
             enabledModelIds.some(id => validModelIds.includes(id));
-        const enabledModels = hasValidEnabled 
+        const enabledModels = hasValidEnabled
             ? MODELS.filter(m => enabledModelIds.includes(m.id))
             : MODELS; // Show all models by default
         const selectedModel = settings?.selectedModel;
@@ -152,7 +153,7 @@ export class ModelSelector {
             const isSelected = model.id === selectedModel;
             const hasImageCap = model.capabilities?.includes('image');
             const hasVisionCap = model.capabilities?.includes('vision');
-            
+
             html += `
                 <button type="button" data-model-id="${model.id}" 
                     class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-lamp-input transition-colors ${isSelected ? 'bg-lamp-input' : ''}">
@@ -174,22 +175,33 @@ export class ModelSelector {
 
     /**
      * Select a model
+     * Uses optimistic updates - UI updates instantly, server sync in background
      * @private
      */
-    async _selectModel(modelId) {
-        await stateManager.updateSettings({ selectedModel: modelId });
-        this._updateSelectedModel();
-        this._renderModelList();
+    _selectModel(modelId) {
+        // Close dropdown immediately for instant feedback
         this.modelDropdown?.classList.add('hidden');
+
+        // Update UI immediately (optimistic)
+        this._updateSelectedModel(modelId);
+        this._renderModelList(modelId);
+
+        // Persist to server in background (non-blocking)
+        stateManager.updateSettings({ selectedModel: modelId }).catch(error => {
+            console.error('Failed to save model selection:', error);
+            // Rollback will happen via stateManager notification
+        });
     }
 
     /**
      * Update selected model display
+     * @param {string} [overrideModelId] - Optional model ID to use instead of state
      * @private
      */
-    _updateSelectedModel() {
+    _updateSelectedModel(overrideModelId) {
         const settings = stateManager.settings;
-        const model = getModelById(settings?.selectedModel);
+        const modelId = overrideModelId ?? settings?.selectedModel;
+        const model = getModelById(modelId);
         if (this.selectedModelName) {
             this.selectedModelName.textContent = model?.name || 'Select Model';
         }

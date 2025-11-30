@@ -39,7 +39,7 @@ function verifyToken(authHeader) {
 async function getChats(userId) {
     try {
         const chats = await sql`
-            SELECT 
+            SELECT
                 c.id,
                 c.title,
                 c.created_at as "createdAt",
@@ -52,6 +52,8 @@ async function getChats(userId) {
                             'role', m.role,
                             'content', m.content,
                             'model', m.model,
+                            'stats', m.stats,
+                            'generatedImages', m.generated_images,
                             'createdAt', m.created_at
                         ) ORDER BY m.created_at ASC
                     ) FILTER (WHERE m.id IS NOT NULL),
@@ -74,7 +76,7 @@ async function getChats(userId) {
 async function getChatById(userId, chatId) {
     try {
         const chats = await sql`
-            SELECT 
+            SELECT
                 c.id,
                 c.title,
                 c.created_at as "createdAt",
@@ -87,6 +89,8 @@ async function getChatById(userId, chatId) {
                             'role', m.role,
                             'content', m.content,
                             'model', m.model,
+                            'stats', m.stats,
+                            'generatedImages', m.generated_images,
                             'createdAt', m.created_at
                         ) ORDER BY m.created_at ASC
                     ) FILTER (WHERE m.id IS NOT NULL),
@@ -112,7 +116,7 @@ async function getChatById(userId, chatId) {
 async function createChat(userId, chatData = {}) {
     try {
         const title = chatData.title || 'New Chat';
-        
+
         const newChat = await sql`
             INSERT INTO chats (user_id, title)
             VALUES (${userId}, ${title})
@@ -181,7 +185,7 @@ async function deleteChat(userId, chatId) {
 async function searchChats(userId, query) {
     try {
         const searchQuery = `%${query.toLowerCase()}%`;
-        
+
         const chats = await sql`
             SELECT DISTINCT ON (c.id)
                 c.id,
@@ -231,17 +235,33 @@ async function addMessage(userId, chatId, messageData) {
 
         // Accept client-provided UUID or let the database generate one
         const clientId = messageData.id || null;
-        
+
+        // Accept client-provided timestamp for proper ordering with optimistic updates
+        // Convert from milliseconds to ISO string if it's a number
+        let clientCreatedAt = null;
+        if (messageData.createdAt) {
+            clientCreatedAt = typeof messageData.createdAt === 'number'
+                ? new Date(messageData.createdAt).toISOString()
+                : messageData.createdAt;
+        }
+
         let newMessage;
-        if (clientId) {
-            // Use client-provided UUID for optimistic updates
+        if (clientId && clientCreatedAt) {
+            // Use client-provided UUID and timestamp for optimistic updates
+            newMessage = await sql`
+                INSERT INTO messages (id, chat_id, role, content, model, created_at)
+                VALUES (${clientId}, ${chatId}, ${messageData.role || 'user'}, ${messageData.content || ''}, ${messageData.model || null}, ${clientCreatedAt})
+                RETURNING id, role, content, model, created_at as "createdAt"
+            `;
+        } else if (clientId) {
+            // Use client-provided UUID only
             newMessage = await sql`
                 INSERT INTO messages (id, chat_id, role, content, model)
                 VALUES (${clientId}, ${chatId}, ${messageData.role || 'user'}, ${messageData.content || ''}, ${messageData.model || null})
                 RETURNING id, role, content, model, created_at as "createdAt"
             `;
         } else {
-            // Let database generate UUID
+            // Let database generate UUID and timestamp
             newMessage = await sql`
                 INSERT INTO messages (chat_id, role, content, model)
                 VALUES (${chatId}, ${messageData.role || 'user'}, ${messageData.content || ''}, ${messageData.model || null})
@@ -272,12 +292,18 @@ async function updateMessage(userId, chatId, messageId, updates) {
             return { error: 'Message not found', status: 404 };
         }
 
+        // Convert stats and generatedImages to JSON string if provided
+        const statsJson = updates.stats ? JSON.stringify(updates.stats) : null;
+        const imagesJson = updates.generatedImages ? JSON.stringify(updates.generatedImages) : null;
+
         const updatedMessage = await sql`
             UPDATE messages
             SET content = COALESCE(${updates.content}, content),
-                model = COALESCE(${updates.model}, model)
+                model = COALESCE(${updates.model}, model),
+                stats = COALESCE(${statsJson}::jsonb, stats),
+                generated_images = COALESCE(${imagesJson}::jsonb, generated_images)
             WHERE id = ${messageId}
-            RETURNING id, role, content, model, created_at as "createdAt"
+            RETURNING id, role, content, model, stats, generated_images as "generatedImages", created_at as "createdAt"
         `;
 
         // Update chat's updated_at
@@ -302,7 +328,7 @@ async function getMessages(userId, chatId) {
         }
 
         const messages = await sql`
-            SELECT id, role, content, model, created_at as "createdAt"
+            SELECT id, role, content, model, stats, generated_images as "generatedImages", created_at as "createdAt"
             FROM messages
             WHERE chat_id = ${chatId}
             ORDER BY created_at ASC
@@ -381,7 +407,7 @@ async function getSettings(userId) {
                 VALUES (${userId})
                 ON CONFLICT (user_id) DO NOTHING
             `;
-            
+
             return {
                 data: {
                     apiKey: '',
@@ -530,7 +556,7 @@ async function clearAll(userId) {
     try {
         // Delete all chats (cascades to messages)
         await sql`DELETE FROM chats WHERE user_id = ${userId}`;
-        
+
         // Reset settings to defaults
         await sql`
             UPDATE user_settings

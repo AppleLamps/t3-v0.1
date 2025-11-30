@@ -1,29 +1,46 @@
 # 🔦 LampChat
 
-A modern, lightweight AI chat application inspired by [T3 Chat](https://t3.chat). Built with vanilla JavaScript and a modular architecture designed for easy customization and database migration.
+A modern, full-featured AI chat application inspired by [T3 Chat](https://t3.chat). Built with vanilla JavaScript and a modular architecture, featuring optional cloud sync with user authentication and Neon PostgreSQL.
 
 ![LampChat Screenshot](https://via.placeholder.com/800x450?text=LampChat+Screenshot)
 
 ## ✨ Features
 
-- **T3-Inspired Design** — Clean, minimal interface closely matching T3 Chat's aesthetic
-- **Clean Message UI** — No cluttered icons or borders, just clean flowing text
-- **🖼️ Image Generation** — Generate images with AI models (GPT-5 Image, Gemini Image)
+### Core Chat Features
+
+- **Multi-Model Support** — Access 15+ AI models via OpenRouter (GPT-5.1, Claude 4.5, Gemini 3, Grok 4, and more)
+- **🖼️ Image Generation** — Generate images with AI models (GPT-5 Image, Gemini 2.5 Flash Image)
 - **📎 Multimodal Support** — Attach images and PDFs for vision models to analyze
-- **Response Actions** — Copy and regenerate buttons on hover for assistant messages
+- **Real-time Streaming** — Optimized streaming responses with no screen flicker
 - **Streaming Stats** — View model name, tokens/sec, token count, and time-to-first-token on hover
-- **Full-Page Settings** — T3-style settings with user profile sidebar and tabbed navigation
-- **Multi-Model Support** — Access 15+ AI models via OpenRouter (GPT-5, Claude, Gemini, Grok, and more)
-- **Real-time Streaming** — Optimized streaming with no screen flicker
 - **Markdown Rendering** — Full markdown support with syntax-highlighted code blocks
-- **Chat History** — Persistent conversations with search and date grouping
+- **Response Actions** — Copy and regenerate buttons on hover for assistant messages
+
+### User Interface
+
+- **T3-Inspired Design** — Clean, minimal interface closely matching T3 Chat's aesthetic
+- **Full-Page Settings** — T3-style settings with user profile sidebar and tabbed navigation
 - **Model Switching** — Change models mid-conversation with searchable dropdown
 - **Floating Input Bar** — Modern floating input with shadow and attach button
-- **Clean Light Theme** — Elegant cream/white design with black/amber accents
-- **Collapsible Sidebar** — Smooth animated sidebar that properly collapses
+- **Collapsible Sidebar** — Smooth animated sidebar with chat list and search
 - **Custom Dialogs** — In-app confirmation modals (no browser popups)
 - **Responsive Design** — Works on desktop and mobile
-- **Privacy-First** — Your API key stays in your browser
+- **Clean Light Theme** — Elegant cream/white design with black/amber accents
+
+### Authentication & Cloud Sync
+
+- **Optional User Accounts** — Sign up/login for cloud storage or use locally
+- **Neon PostgreSQL Backend** — Cloud database for authenticated users
+- **Automatic Data Sync** — Chats sync across devices when logged in
+- **JWT Authentication** — Secure token-based authentication with 7-day expiry
+- **Data Export/Import** — Export and import all your data
+
+### Data & Privacy
+
+- **Dual Storage Modes** — LocalStorage for guests, Neon PostgreSQL for authenticated users
+- **Chat History** — Persistent conversations with search and date grouping
+- **Privacy-First** — Your API key stays in your browser (never sent to our servers)
+- **Direct API Calls** — Messages go directly to OpenRouter, not through any intermediary
 
 ## 🚀 Quick Start
 
@@ -31,8 +48,8 @@ A modern, lightweight AI chat application inspired by [T3 Chat](https://t3.chat)
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/lampchat.git
-cd lampchat
+git clone https://github.com/AppleLamps/t3-v0.1.git
+cd t3-v0.1
 
 # Install dependencies
 npm install
@@ -55,7 +72,8 @@ npm run preview
 
 1. Push your code to GitHub
 2. Connect the repo to [Vercel](https://vercel.com)
-3. Vercel auto-detects Vite and deploys automatically
+3. Set the required environment variables (see [Configuration](#️-configuration))
+4. Vercel auto-detects Vite and deploys automatically
 
 > Build command: `npm run build` | Output directory: `dist`
 
@@ -67,30 +85,54 @@ npm run preview
 4. Paste your OpenRouter API key
 5. Start chatting!
 
+## ⚙️ Configuration
+
+### Environment Variables (for Vercel deployment)
+
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `DATABASE_URL` | Neon PostgreSQL connection string | Yes (for auth) |
+| `JWT_SECRET` | Secret key for JWT token signing | Yes (for auth) |
+
+### Database Setup
+
+1. Create a free [Neon PostgreSQL](https://neon.tech) database
+2. Run the schema in `db/schema.sql` to create tables
+3. Add your `DATABASE_URL` to Vercel environment variables
+
 ## 📁 Project Structure
 
-```
+```text
 lampchat/
 ├── index.html                  # Entry point (minimal HTML shell)
 ├── main.js                     # Application bootstrap
-├── README.md
-├── STATUS.md                   # Detailed project status
-├── .gitignore
+├── vercel.json                 # Vercel deployment config
+├── package.json                # Dependencies & scripts
+│
+├── api/                        # Vercel Serverless Functions
+│   ├── auth.js                 # Authentication (signup/login/verify)
+│   └── data.js                 # Data operations (CRUD for chats, messages, settings)
+│
+├── db/
+│   └── schema.sql              # Neon PostgreSQL schema
 │
 └── src/
     ├── config/                 # Configuration
     │   ├── constants.js        # App constants & storage keys
-    │   ├── models.js           # AI model definitions
+    │   ├── models.js           # AI model definitions (15+ models)
     │   └── index.js
     │
-    ├── repositories/           # Data Access Layer
+    ├── repositories/           # Data Access Layer (Repository Pattern)
     │   ├── BaseRepository.js   # Abstract interface
-    │   ├── LocalStorageRepository.js
-    │   └── index.js            # Factory (swap implementations here)
+    │   ├── LocalStorageRepository.js  # Guest mode storage
+    │   ├── NeonRepository.js   # Cloud storage for authenticated users
+    │   └── index.js            # Dynamic repository factory
     │
     ├── services/               # Business Logic
-    │   ├── openrouter.js       # OpenRouter API client with streaming stats
+    │   ├── openrouter.js       # OpenRouter API client with streaming
+    │   ├── auth.js             # Authentication service
     │   ├── state.js            # State management (pub/sub)
+    │   ├── ChatController.js   # Chat orchestration
     │   └── index.js
     │
     ├── components/             # UI Components
@@ -98,11 +140,21 @@ lampchat/
     │   ├── ChatArea.js         # Message display with hover actions
     │   ├── MessageInput.js     # Input & model selector
     │   ├── Settings.js         # Full-page settings (T3-style)
+    │   ├── AuthModal.js        # Login/Signup modal
+    │   ├── chat/               # Chat sub-components
+    │   │   ├── MessageRenderer.js
+    │   │   ├── PromptSelector.js
+    │   │   ├── TypingIndicator.js
+    │   │   └── WelcomeScreen.js
+    │   ├── input/              # Input sub-components
+    │   │   ├── AttachmentManager.js
+    │   │   └── ModelSelector.js
     │   └── index.js
     │
     ├── utils/                  # Utilities
     │   ├── dom.js              # DOM helpers + custom confirm dialog
     │   ├── markdown.js         # Markdown rendering
+    │   ├── codeRenderer.js     # Code block rendering
     │   ├── date.js             # Date formatting
     │   ├── files.js            # File processing (Base64 conversion)
     │   └── index.js
@@ -113,18 +165,23 @@ lampchat/
 
 ## 🏗️ Architecture
 
-### Repository Pattern
+### Dynamic Repository Pattern
 
-The data layer uses a repository pattern, making database migration straightforward:
+The data layer automatically switches between storage backends based on authentication state:
 
 ```javascript
 // src/repositories/index.js
+import { authService } from '../services/auth.js';
 
-// Current: LocalStorage
-const REPOSITORY_TYPE = 'localStorage';
-
-// Future: Change to use Neon PostgreSQL
-const REPOSITORY_TYPE = 'neon';
+// Automatically selects the appropriate repository:
+// - LocalStorageRepository for guest users
+// - NeonRepository for authenticated users
+export function getRepository() {
+    if (authService.isLoggedIn()) {
+        return getNeonRepository();
+    }
+    return getLocalStorageRepository();
+}
 ```
 
 ### State Management
@@ -155,15 +212,15 @@ class MyComponent {
     init(containerId) {
         // Render HTML, cache elements, bind events
     }
-    
+
     setHandlers(handlers) {
         // Connect to external event handlers
     }
-    
+
     refresh() {
         // Update UI from state
     }
-    
+
     destroy() {
         // Cleanup subscriptions
     }
@@ -182,7 +239,7 @@ export const MODELS = [
         id: 'provider/model-name',
         name: 'Display Name',
         provider: 'Provider',
-        capabilities: ['vision', 'tools', 'reasoning'],
+        capabilities: ['vision', 'tools', 'chat'],
         description: 'Model description'
     },
     // ... existing models
@@ -193,7 +250,7 @@ export const MODELS = [
 export const IMAGE_GENERATION_MODELS = [
     'openai/gpt-5-image',
     'openai/gpt-5-image-mini',
-    'google/gemini-2.5-flash-preview-image-generation',
+    'google/gemini-2.5-flash-image',
 ];
 ```
 
@@ -228,49 +285,70 @@ export default {
 | Technology | Purpose |
 |------------|----------|
 | **Vanilla JS** | Core application (ES Modules) |
-| **Vite** | Build tool & dev server |
-| **Tailwind CSS** | Styling (with PostCSS) |
+| **Vite 5** | Build tool & dev server |
+| **Tailwind CSS 3** | Styling (with PostCSS) |
+| **Neon PostgreSQL** | Cloud database for authenticated users |
+| **Vercel Serverless** | API endpoints for auth & data |
+| **JWT** | Token-based authentication |
 | **DM Sans** | Typography |
 | **Highlight.js** | Code syntax highlighting |
 | **Marked** | Markdown parsing |
+| **DOMPurify** | XSS protection for rendered content |
 | **OpenRouter** | AI model access |
 
 ## 📦 Dependencies
 
 **Dev Dependencies:**
 
-- [Vite](https://vitejs.dev/) — Fast build tool & dev server
-- [Tailwind CSS](https://tailwindcss.com/) — Utility-first CSS
-- [PostCSS](https://postcss.org/) — CSS processing
-- [Autoprefixer](https://autoprefixer.github.io/) — Vendor prefixes
+- [Vite](https://vitejs.dev/) `^5.0.10` — Fast build tool & dev server
+- [Tailwind CSS](https://tailwindcss.com/) `^3.4.0` — Utility-first CSS
+- [PostCSS](https://postcss.org/) `^8.4.32` — CSS processing
+- [Autoprefixer](https://autoprefixer.github.io/) `^10.4.16` — Vendor prefixes
 
 **Runtime Dependencies:**
 
-- [Highlight.js](https://highlightjs.org/) — Code highlighting
-- [Marked](https://marked.js.org/) — Markdown parser
+- [@neondatabase/serverless](https://neon.tech) `^0.10.4` — Neon PostgreSQL client
+- [bcryptjs](https://www.npmjs.com/package/bcryptjs) `^2.4.3` — Password hashing
+- [jsonwebtoken](https://www.npmjs.com/package/jsonwebtoken) `^9.0.2` — JWT authentication
+- [Highlight.js](https://highlightjs.org/) `^11.9.0` — Code highlighting
+- [Marked](https://marked.js.org/) `^11.1.1` — Markdown parser
+- [DOMPurify](https://github.com/cure53/DOMPurify) `^3.3.0` — HTML sanitization
 
 **External (Google Fonts CDN):**
 
 - DM Sans & JetBrains Mono
 
+## 🤖 Available Models
+
+LampChat supports 15+ AI models via OpenRouter:
+
+| Provider | Models |
+|----------|--------|
+| **OpenAI** | GPT-5.1, GPT-5.1 Chat, GPT-5 Image, GPT-5 Image Mini |
+| **Anthropic** | Claude Opus 4.5, Claude Sonnet 4.5, Claude Haiku 4.5 |
+| **Google** | Gemini 3 Pro, Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.5 Flash Lite, Gemini 2.5 Flash Image |
+| **xAI** | Grok 4 Fast, Grok 4.1 Fast (Free), Grok Code Fast |
+
 ## 🔐 Privacy & Security
 
-- **API Key Storage**: Your OpenRouter API key is stored only in your browser's localStorage
-- **No Backend**: The app runs entirely in your browser
-- **Direct API Calls**: Messages go directly to OpenRouter, not through any intermediary
+- **API Key Storage**: Your OpenRouter API key is stored in localStorage (guest) or encrypted in Neon (authenticated)
+- **Password Security**: Passwords are hashed with bcrypt (10 salt rounds)
+- **JWT Tokens**: Secure authentication with 7-day expiry
+- **Direct API Calls**: Chat messages go directly to OpenRouter, not through our servers
 - **No Analytics**: No tracking or data collection
+- **XSS Protection**: All rendered content sanitized with DOMPurify
 
 ## 🛣️ Roadmap
 
 - [x] ~~Image attachments~~ ✅ **Multimodal support** (images & PDFs)
 - [x] ~~Image generation~~ ✅ **AI image generation** with GPT-5 Image, Gemini
+- [x] ~~Neon PostgreSQL integration~~ ✅ **Cloud database** for authenticated users
+- [x] ~~User authentication~~ ✅ **JWT-based auth** with signup/login
 - [ ] Dark mode toggle
 - [ ] Chat export (JSON, Markdown)
 - [ ] System prompts / personas
 - [ ] Stop generation button
 - [ ] Chat renaming
-- [ ] Neon PostgreSQL integration
-- [ ] User authentication
 - [ ] Chat sharing
 
 ## 🤝 Contributing
@@ -291,10 +369,9 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 - Inspired by [T3 Chat](https://t3.chat)
 - AI models provided by [OpenRouter](https://openrouter.ai)
+- Database hosting by [Neon](https://neon.tech)
 - Icons from [Heroicons](https://heroicons.com)
 
 ---
 
-<p align="center">
-  Made with ☕ and curiosity
-</p>
+Made with ☕ and curiosity

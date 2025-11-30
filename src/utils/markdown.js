@@ -132,24 +132,24 @@ export function addCopyButtons(container) {
 
 /**
  * Add render buttons to HTML/CSS/JS code blocks
- * @param {Element} container 
+ * @param {Element} container
  */
 export function addRenderButtons(container) {
     container.querySelectorAll('pre').forEach((pre) => {
         const codeEl = pre.querySelector('code');
         if (!codeEl) return;
-        
+
         // Detect language from class (language-html, language-css, etc.)
         const langMatch = codeEl.className.match(/language-(\w+)/);
         const lang = langMatch?.[1]?.toLowerCase();
-        
+
         // Only show for HTML, CSS, JS
         const renderableLangs = ['html', 'css', 'javascript', 'js'];
         if (!renderableLangs.includes(lang)) return;
-        
+
         // Skip if already has render button
         if (pre.querySelector('.render-button')) return;
-        
+
         const button = document.createElement('button');
         button.className = 'render-button absolute top-2 right-12 flex items-center justify-center w-8 h-8 rounded-md bg-white/80 hover:bg-white border border-lamp-border/50 hover:border-lamp-border transition-all text-lamp-muted hover:text-lamp-text shadow-sm';
         button.innerHTML = `
@@ -160,13 +160,13 @@ export function addRenderButtons(container) {
         `;
         button.title = 'Render code';
         button.setAttribute('aria-label', 'Render code');
-        
+
         button.addEventListener('click', (e) => {
             e.stopPropagation();
             const code = codeEl.textContent || pre.textContent;
             showCodeRenderer(code, lang);
         });
-        
+
         // Ensure pre has relative positioning
         pre.style.position = 'relative';
         pre.appendChild(button);
@@ -174,12 +174,92 @@ export function addRenderButtons(container) {
 }
 
 /**
- * Process message content (render markdown + highlight + copy buttons)
- * @param {Element} container 
+ * Collapse height threshold in pixels (~12 lines of code)
+ */
+const CODE_COLLAPSE_THRESHOLD = 300;
+
+/**
+ * Add collapse/expand functionality to long code blocks
+ * @param {Element} container
+ */
+export function addCollapseToCodeBlocks(container) {
+    container.querySelectorAll('pre').forEach((pre) => {
+        // Skip if already processed
+        if (pre.dataset.collapseProcessed) return;
+        pre.dataset.collapseProcessed = 'true';
+
+        // Wait for content to render, then check height
+        requestAnimationFrame(() => {
+            const scrollHeight = pre.scrollHeight;
+
+            // Only collapse if exceeds threshold
+            if (scrollHeight <= CODE_COLLAPSE_THRESHOLD) return;
+
+            // Add collapsed class to restrict height
+            pre.classList.add('collapsed');
+
+            // Create the overlay container
+            const overlay = document.createElement('div');
+            overlay.className = 'code-collapse-overlay';
+
+            // Create the toggle button
+            const button = document.createElement('button');
+            button.className = 'code-collapse-button';
+
+            const updateButtonState = (isCollapsed) => {
+                if (isCollapsed) {
+                    button.innerHTML = `
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                        <span>Show more</span>
+                    `;
+                    button.title = 'Expand code block';
+                    overlay.classList.remove('expanded');
+                } else {
+                    button.innerHTML = `
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                        </svg>
+                        <span>Show less</span>
+                    `;
+                    button.title = 'Collapse code block';
+                    overlay.classList.add('expanded');
+                }
+            };
+
+            // Initialize as collapsed
+            updateButtonState(true);
+
+            button.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isCurrentlyCollapsed = pre.classList.contains('collapsed');
+
+                if (isCurrentlyCollapsed) {
+                    pre.classList.remove('collapsed');
+                    updateButtonState(false);
+                } else {
+                    pre.classList.add('collapsed');
+                    updateButtonState(true);
+                    // Scroll the pre element into view when collapsing
+                    pre.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            });
+
+            overlay.appendChild(button);
+            pre.appendChild(overlay);
+        });
+    });
+}
+
+/**
+ * Process message content (render markdown + highlight + copy buttons + collapse)
+ * @param {Element} container
  */
 export function processMessageContent(container) {
     highlightCodeBlocks(container);
     addCopyButtons(container);
     addRenderButtons(container);
+    addCollapseToCodeBlocks(container);
 }
 

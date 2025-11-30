@@ -159,6 +159,9 @@ export class ChatController {
             }));
 
             if (isImageGen) {
+                // Hide typing indicator and show image generation shimmer instead
+                this.chatArea.hideTypingIndicator();
+                this.chatArea.showImageGenerationShimmer();
                 await this._handleImageGeneration(message, selectedModel, assistantMsg.id);
             } else {
                 await this._handleChatStream(messages, selectedModel, assistantMsg.id, attachments);
@@ -200,8 +203,6 @@ export class ChatController {
         const attachments = lastUserMsg?.attachments || [];
 
         try {
-            // Show typing indicator
-            this.chatArea.showTypingIndicator();
             stateManager.setStreaming(true);
 
             // Clear the existing message content
@@ -212,16 +213,21 @@ export class ChatController {
             const isImageGen = isImageGenerationModel(selectedModel);
 
             if (isImageGen) {
+                // Show image generation shimmer for image models
+                this.chatArea.showImageGenerationShimmer();
                 // Get the original user message for image regeneration
                 const userMessage = messagesForContext[messagesForContext.length - 1]?.content || '';
                 await this._handleImageGeneration(userMessage, selectedModel, messageId);
             } else {
+                // Show typing indicator for chat models
+                this.chatArea.showTypingIndicator();
                 await this._handleRegenerateStream(messagesForContext, selectedModel, messageId, attachments);
             }
 
         } catch (error) {
             console.error('Regenerate error:', error);
             this.chatArea.hideTypingIndicator();
+            this.chatArea.hideImageGenerationShimmer();
             stateManager.setStreaming(false);
         }
     }
@@ -234,7 +240,7 @@ export class ChatController {
         try {
             const result = await this.openRouter.generateImage(prompt, model);
 
-            this.chatArea.hideTypingIndicator();
+            this.chatArea.hideImageGenerationShimmer();
             stateManager.setStreaming(false);
 
             const updateData = {
@@ -249,7 +255,7 @@ export class ChatController {
             await stateManager.updateMessage(messageId, updateData);
         } catch (error) {
             console.error('Image generation error:', error);
-            this.chatArea.hideTypingIndicator();
+            this.chatArea.hideImageGenerationShimmer();
             stateManager.setStreaming(false);
 
             await stateManager.updateMessage(messageId, {

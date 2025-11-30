@@ -361,6 +361,7 @@ class StateManager {
                 return repository.addMessage(realChatId, {
                     ...messageData,
                     id: messageId,
+                    createdAt: optimisticMessage.createdAt, // Pass client timestamp for proper ordering
                 }).catch(error => {
                     console.error('Failed to persist message:', error);
                     return null;
@@ -482,14 +483,37 @@ class StateManager {
     // ==================
 
     /**
-     * Update settings
-     * @param {Object} updates 
+     * Update settings with optimistic updates for instant UI response
+     * @param {Object} updates
      * @returns {Promise<Object>}
      */
     async updateSettings(updates) {
-        this.state.settings = await repository.saveSettings(updates);
+        // Store previous state for potential rollback
+        const previousSettings = { ...this.state.settings };
+
+        // IMMEDIATELY update local state (optimistic update)
+        this.state.settings = { ...this.state.settings, ...updates };
+
+        // Notify listeners IMMEDIATELY so UI updates instantly
         this._notify('settingsUpdated', this.state.settings);
-        return this.state.settings;
+
+        // Sync with server in background
+        try {
+            const serverSettings = await repository.saveSettings(updates);
+            // Update with server response (may include additional fields)
+            this.state.settings = serverSettings;
+            // Only notify again if server response differs
+            if (JSON.stringify(serverSettings) !== JSON.stringify({ ...previousSettings, ...updates })) {
+                this._notify('settingsUpdated', this.state.settings);
+            }
+            return this.state.settings;
+        } catch (error) {
+            console.error('Failed to save settings to server:', error);
+            // Rollback on error
+            this.state.settings = previousSettings;
+            this._notify('settingsUpdated', this.state.settings);
+            throw error;
+        }
     }
 
     // ==================

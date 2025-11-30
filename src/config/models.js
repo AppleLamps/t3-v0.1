@@ -37,6 +37,13 @@ export const MODELS = [
         description: 'xAI Grok 4 - tuned for fast conversational responses'
     },
     {
+        id: 'x-ai/grok-4.1-fast:free',
+        name: 'Grok 4.1 Fast (Free)',
+        provider: 'xAI',
+        capabilities: ['fast', 'chat', 'free'],
+        description: 'xAI Grok 4.1 Fast - free tier model for conversational use'
+    },
+    {
         id: 'x-ai/grok-code-fast-1',
         name: 'Grok Code (Fast)',
         provider: 'xAI',
@@ -115,11 +122,11 @@ export const MODELS = [
 
     // Google - Image generation
     {
-        id: 'google/gemini-2.5-flash-preview-image-generation',
-        name: 'Gemini 2.5 Flash Image (Preview)',
+        id: 'google/gemini-2.5-flash-image',
+        name: 'Gemini 2.5 Flash Image',
         provider: 'Google',
         capabilities: ['image', 'vision', 'fast'],
-        description: 'Google Gemini 2.5 Flash image generation (preview)'
+        description: 'Google Gemini 2.5 Flash image generation'
     },
 ];
 
@@ -161,7 +168,7 @@ export const DEFAULT_MODEL = 'openai/gpt-5.1';
 export const IMAGE_GENERATION_MODELS = [
     'openai/gpt-5-image',
     'openai/gpt-5-image-mini',
-    'google/gemini-2.5-flash-preview-image-generation',
+    'google/gemini-2.5-flash-image',
 ];
 
 /**

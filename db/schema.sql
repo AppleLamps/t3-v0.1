@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
         'openai/gpt-5.1',
         'openai/gpt-5.1-chat',
         'x-ai/grok-4-fast',
+        'x-ai/grok-4.1-fast:free',
         'x-ai/grok-code-fast-1',
         'anthropic/claude-opus-4.5',
         'anthropic/claude-haiku-4.5',
@@ -42,7 +43,7 @@ CREATE TABLE IF NOT EXISTS user_settings (
         'google/gemini-2.5-flash-lite',
         'openai/gpt-5-image',
         'openai/gpt-5-image-mini',
-        'google/gemini-2.5-flash-preview-image-generation'
+        'google/gemini-2.5-flash-image'
     ],
     web_search_enabled BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -74,12 +75,18 @@ CREATE TABLE IF NOT EXISTS messages (
     role VARCHAR(50) NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
     content TEXT NOT NULL,
     model VARCHAR(255),
+    stats JSONB DEFAULT NULL,
+    generated_images JSONB DEFAULT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Index for faster message lookups by chat
 CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages(chat_id);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+
+-- Migration: Add stats column if it doesn't exist (for existing databases)
+-- Run this if upgrading: ALTER TABLE messages ADD COLUMN IF NOT EXISTS stats JSONB DEFAULT NULL;
+-- Run this if upgrading: ALTER TABLE messages ADD COLUMN IF NOT EXISTS generated_images JSONB DEFAULT NULL;
 
 -- ==================
 -- Functions for automatic updated_at
