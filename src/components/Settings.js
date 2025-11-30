@@ -16,11 +16,11 @@ export class Settings {
             tabs: null,
             content: null,
         };
-        
+
         this._activeTab = 'account';
         this._unsubscribers = [];
     }
-    
+
     /**
      * Initialize the settings page
      * @param {string} containerId - Container element ID
@@ -31,12 +31,12 @@ export class Settings {
             console.error('Settings container not found');
             return;
         }
-        
+
         container.innerHTML = this._render();
         this._cacheElements();
         this._bindEvents();
     }
-    
+
     /**
      * Render settings page HTML
      * @private
@@ -45,7 +45,7 @@ export class Settings {
         const user = stateManager.user;
         const userName = user?.name || 'User';
         const userInitial = userName.charAt(0).toUpperCase();
-        
+
         return `
             <div id="settingsPage" class="hidden fixed inset-0 z-50 bg-lamp-bg overflow-hidden">
                 <!-- Settings Header -->
@@ -150,7 +150,7 @@ export class Settings {
             </div>
         `;
     }
-    
+
     /**
      * Cache element references
      * @private
@@ -164,7 +164,7 @@ export class Settings {
         this.elements.userName = $('settingsUserName');
         this.elements.chatCount = $('settingsChatCount');
     }
-    
+
     /**
      * Bind event handlers
      * @private
@@ -172,7 +172,7 @@ export class Settings {
     _bindEvents() {
         // Back button
         this.elements.backBtn?.addEventListener('click', () => this.close());
-        
+
         // Tab switching
         this.elements.tabs?.addEventListener('click', (e) => {
             const tab = e.target.closest('[data-tab]');
@@ -180,19 +180,19 @@ export class Settings {
                 this._switchTab(tab.dataset.tab);
             }
         });
-        
+
         // Theme toggle (placeholder)
         $('themeToggleBtn')?.addEventListener('click', () => {
             alert('Dark mode coming soon!');
         });
-        
+
         // API key visibility toggle (delegated)
         this.elements.content?.addEventListener('click', (e) => {
             if (e.target.closest('#toggleApiKeyBtn')) {
                 this._toggleApiKeyVisibility();
             }
         });
-        
+
         // Escape key to close
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && !this.elements.page?.classList.contains('hidden')) {
@@ -200,7 +200,7 @@ export class Settings {
             }
         });
     }
-    
+
     /**
      * Open the settings page
      */
@@ -208,12 +208,12 @@ export class Settings {
         // Update user info
         this._updateUserInfo();
         this._updateChatCount();
-        
+
         this.elements.page?.classList.remove('hidden');
         this._switchTab('account');
         document.body.style.overflow = 'hidden';
     }
-    
+
     /**
      * Close the settings page
      */
@@ -221,7 +221,7 @@ export class Settings {
         this.elements.page?.classList.add('hidden');
         document.body.style.overflow = '';
     }
-    
+
     /**
      * Update user info display
      * @private
@@ -230,7 +230,7 @@ export class Settings {
         const user = stateManager.user;
         const userName = user?.name || 'User';
         const userInitial = userName.charAt(0).toUpperCase();
-        
+
         if (this.elements.userName) {
             this.elements.userName.textContent = userName;
         }
@@ -238,7 +238,7 @@ export class Settings {
             this.elements.userInitial.textContent = userInitial;
         }
     }
-    
+
     /**
      * Update chat count display
      * @private
@@ -249,14 +249,14 @@ export class Settings {
             this.elements.chatCount.textContent = chats.length;
         }
     }
-    
+
     /**
      * Switch active tab
      * @private
      */
     _switchTab(tab) {
         this._activeTab = tab;
-        
+
         // Update tab buttons
         this.elements.tabs?.querySelectorAll('.settings-tab').forEach(btn => {
             if (btn.dataset.tab === tab) {
@@ -267,11 +267,11 @@ export class Settings {
                 btn.classList.add('text-lamp-muted', 'hover:text-lamp-text', 'hover:bg-lamp-card/50');
             }
         });
-        
+
         // Render content
         this._renderTabContent(tab);
     }
-    
+
     /**
      * Render tab content
      * @private
@@ -279,9 +279,9 @@ export class Settings {
     _renderTabContent(tab) {
         const user = stateManager.user;
         const settings = stateManager.settings;
-        
+
         let html = '';
-        
+
         switch (tab) {
             case 'account':
                 html = `
@@ -314,7 +314,7 @@ export class Settings {
                     </section>
                 `;
                 break;
-                
+
             case 'customization':
                 html = `
                     <section class="mb-8">
@@ -366,7 +366,7 @@ export class Settings {
                     </section>
                 `;
                 break;
-                
+
             case 'api':
                 html = `
                     <section class="mb-8">
@@ -406,12 +406,12 @@ export class Settings {
                     </section>
                 `;
                 break;
-                
+
             case 'models':
-                const defaultModelOptions = MODELS.map(m => 
+                const defaultModelOptions = MODELS.map(m =>
                     `<option value="${m.id}" ${m.id === settings?.selectedModel ? 'selected' : ''}>${m.name} (${m.provider})</option>`
                 ).join('');
-                
+
                 const modelCheckboxes = MODELS.map(m => `
                     <label class="flex items-center gap-3 p-3 rounded-lg hover:bg-lamp-input cursor-pointer border border-transparent hover:border-lamp-border transition-colors">
                         <input type="checkbox" value="${m.id}" ${settings?.enabledModels?.includes(m.id) ? 'checked' : ''} 
@@ -423,7 +423,7 @@ export class Settings {
                         ${m.id === settings?.selectedModel ? '<span class="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">Default</span>' : ''}
                     </label>
                 `).join('');
-                
+
                 html = `
                     <section class="mb-8">
                         <h2 class="text-xl font-semibold mb-6">Models</h2>
@@ -455,7 +455,7 @@ export class Settings {
                     </section>
                 `;
                 break;
-                
+
             case 'data':
                 html = `
                     <section class="mb-8">
@@ -498,13 +498,13 @@ export class Settings {
                 `;
                 break;
         }
-        
+
         setHtml(this.elements.content, html);
-        
+
         // Bind tab-specific buttons
         this._bindTabButtons(tab);
     }
-    
+
     /**
      * Bind tab-specific button handlers
      * @private
@@ -530,7 +530,7 @@ export class Settings {
                 break;
         }
     }
-    
+
     /**
      * Toggle API key visibility
      * @private
@@ -538,7 +538,7 @@ export class Settings {
     _toggleApiKeyVisibility() {
         const input = $('settingsApiKey');
         const icon = $('eyeIcon');
-        
+
         if (input && icon) {
             if (input.type === 'password') {
                 input.type = 'text';
@@ -549,7 +549,7 @@ export class Settings {
             }
         }
     }
-    
+
     /**
      * Save name
      * @private
@@ -560,7 +560,7 @@ export class Settings {
         this._updateUserInfo();
         this._showToast('Name saved successfully!');
     }
-    
+
     /**
      * Save API key
      * @private
@@ -570,7 +570,7 @@ export class Settings {
         await stateManager.updateSettings({ apiKey });
         this._showToast('API key saved successfully!');
     }
-    
+
     /**
      * Save default model
      * @private
@@ -581,7 +581,7 @@ export class Settings {
         this._renderTabContent('models'); // Re-render to update badges
         this._showToast('Default model saved!');
     }
-    
+
     /**
      * Save enabled models
      * @private
@@ -591,11 +591,11 @@ export class Settings {
         const enabledModels = Array.from(checkboxes)
             .filter(cb => cb.checked)
             .map(cb => cb.value);
-        
+
         await stateManager.updateSettings({ enabledModels });
         this._showToast('Model selection saved!');
     }
-    
+
     /**
      * Export data
      * @private
@@ -611,7 +611,7 @@ export class Settings {
         URL.revokeObjectURL(url);
         this._showToast('Data exported successfully!');
     }
-    
+
     /**
      * Import data
      * @private
@@ -619,19 +619,99 @@ export class Settings {
     async _importData(event) {
         const file = event.target.files[0];
         if (!file) return;
-        
+
         try {
             const text = await file.text();
             const data = JSON.parse(text);
-            // TODO: Implement import logic in stateManager
-            this._showToast('Import feature coming soon!');
+
+            // Validate the import data schema
+            if (!this._validateImportData(data)) {
+                this._showToast('Failed to import: Invalid file format or missing required data');
+                event.target.value = '';
+                return;
+            }
+
+            // Confirm import with user
+            const confirmed = await showConfirm(
+                'This will merge imported chats with your existing data. Your current settings will be preserved unless overwritten by the import. Continue?',
+                {
+                    title: 'Import Data',
+                    confirmText: 'Import',
+                    cancelText: 'Cancel',
+                    danger: false,
+                }
+            );
+
+            if (!confirmed) {
+                event.target.value = '';
+                return;
+            }
+
+            // Perform the import
+            const success = await stateManager.importData(data);
+
+            if (success) {
+                // Refresh UI elements
+                this._updateUserInfo();
+                this._updateChatCount();
+                this._renderTabContent(this._activeTab);
+                this._showToast('Data imported successfully!');
+            } else {
+                this._showToast('Failed to import data: An error occurred');
+            }
         } catch (error) {
-            this._showToast('Failed to import data: Invalid file format');
+            console.error('Import error:', error);
+            this._showToast('Failed to import data: Invalid JSON file');
         }
-        
+
         event.target.value = '';
     }
-    
+
+    /**
+     * Validate import data structure
+     * @private
+     * @param {Object} data - The parsed import data
+     * @returns {boolean} - Whether the data is valid
+     */
+    _validateImportData(data) {
+        // Must be an object
+        if (!data || typeof data !== 'object') {
+            return false;
+        }
+
+        // Must have at least one of the expected top-level keys
+        const hasValidKeys = data.chats || data.user || data.settings;
+        if (!hasValidKeys) {
+            return false;
+        }
+
+        // If chats exist, validate structure
+        if (data.chats) {
+            if (typeof data.chats !== 'object') {
+                return false;
+            }
+            // Validate each chat has required fields
+            for (const chatId of Object.keys(data.chats)) {
+                const chat = data.chats[chatId];
+                if (!chat.id || !Array.isArray(chat.messages)) {
+                    return false;
+                }
+            }
+        }
+
+        // If user exists, must be an object
+        if (data.user && typeof data.user !== 'object') {
+            return false;
+        }
+
+        // If settings exist, must be an object
+        if (data.settings && typeof data.settings !== 'object') {
+            return false;
+        }
+
+        return true;
+    }
+
     /**
      * Clear all data
      * @private
@@ -649,7 +729,7 @@ export class Settings {
             this._showToast('All data deleted');
         }
     }
-    
+
     /**
      * Show toast notification
      * @private
@@ -660,14 +740,14 @@ export class Settings {
         toast.className = 'fixed bottom-4 right-4 bg-lamp-accent text-white px-4 py-2 rounded-lg shadow-lg z-[60] animate-fade-in';
         toast.textContent = message;
         document.body.appendChild(toast);
-        
+
         setTimeout(() => {
             toast.style.opacity = '0';
             toast.style.transition = 'opacity 0.3s';
             setTimeout(() => toast.remove(), 300);
         }, 2000);
     }
-    
+
     /**
      * Cleanup
      */

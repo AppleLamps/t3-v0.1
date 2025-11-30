@@ -34,6 +34,7 @@
     margin: 12px 0;
     border: 1px solid #E8E6E1;
     position: relative;
+    isolation: isolate;
 }
 
 .message-content code {
@@ -114,6 +115,7 @@
 
 /* Typing indicator animation */
 @keyframes pulse-dot {
+
     0%,
     100% {
         opacity: 0.4;
@@ -178,7 +180,8 @@ textarea {
 /* Copy button for code blocks */
 .copy-button {
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.2s ease, background-color 0.15s ease, border-color 0.15s ease;
+    z-index: 10;
 }
 
 pre:hover .copy-button {
@@ -212,7 +215,10 @@ pre:hover .copy-button {
 }
 
 /* Smooth transitions for interactive elements */
-button, a, input, textarea {
+button,
+a,
+input,
+textarea {
     transition: all 0.15s ease;
 }
 
@@ -223,7 +229,8 @@ button, a, input, textarea {
 }
 
 /* Input focus glow */
-input:focus, textarea:focus {
+input:focus,
+textarea:focus {
     box-shadow: 0 0 0 1px rgba(26, 26, 26, 0.05);
 }
 
@@ -260,6 +267,7 @@ input:focus, textarea:focus {
 
 /* Print styles */
 @media print {
+
     #sidebar,
     .settings-modal,
     #chatForm {
@@ -270,4 +278,3 @@ input:focus, textarea:focus {
         overflow: visible !important;
     }
 }
-
