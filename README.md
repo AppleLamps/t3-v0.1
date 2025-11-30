@@ -8,6 +8,8 @@ A modern, lightweight AI chat application inspired by [T3 Chat](https://t3.chat)
 
 - **T3-Inspired Design** — Clean, minimal interface closely matching T3 Chat's aesthetic
 - **Clean Message UI** — No cluttered icons or borders, just clean flowing text
+- **🖼️ Image Generation** — Generate images with AI models (GPT-5 Image, Gemini Image)
+- **📎 Multimodal Support** — Attach images and PDFs for vision models to analyze
 - **Response Actions** — Copy and regenerate buttons on hover for assistant messages
 - **Streaming Stats** — View model name, tokens/sec, token count, and time-to-first-token on hover
 - **Full-Page Settings** — T3-style settings with user profile sidebar and tabbed navigation
@@ -102,6 +104,7 @@ lampchat/
     │   ├── dom.js              # DOM helpers + custom confirm dialog
     │   ├── markdown.js         # Markdown rendering
     │   ├── date.js             # Date formatting
+    │   ├── files.js            # File processing (Base64 conversion)
     │   └── index.js
     │
     └── styles/
@@ -184,6 +187,14 @@ export const MODELS = [
     },
     // ... existing models
 ];
+
+// For image generation models, add 'image' to capabilities
+// and include the model ID in IMAGE_GENERATION_MODELS array:
+export const IMAGE_GENERATION_MODELS = [
+    'openai/gpt-5-image',
+    'openai/gpt-5-image-mini',
+    'google/gemini-2.5-flash-preview-image-generation',
+];
 ```
 
 ### Changing the Theme
@@ -251,9 +262,10 @@ export default {
 
 ## 🛣️ Roadmap
 
+- [x] ~~Image attachments~~ ✅ **Multimodal support** (images & PDFs)
+- [x] ~~Image generation~~ ✅ **AI image generation** with GPT-5 Image, Gemini
 - [ ] Dark mode toggle
 - [ ] Chat export (JSON, Markdown)
-- [ ] Image attachments (Attach button UI ready)
 - [ ] System prompts / personas
 - [ ] Stop generation button
 - [ ] Chat renaming

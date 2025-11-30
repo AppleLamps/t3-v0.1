@@ -1,6 +1,6 @@
 # 📋 LampChat - Project Status
 
-> Last Updated: November 30, 2025
+> Last Updated: November 30, 2025 (v0.2 - Multimodal & Image Generation)
 
 ## 🎯 Project Overview
 
@@ -54,8 +54,10 @@
   - Floating card design with shadow
   - Auto-resizing textarea
   - Minimal model selector dropdown with search
+  - Model capability badges (Image, Vision, Fast)
   - Web search toggle button
-  - **Attach button** (UI ready for file attachments)
+  - **Attach button** with file picker (images & PDFs)
+  - Attachment preview area with thumbnails and remove buttons
   - Circular amber send button (T3-style)
 
 - [x] **Settings Page** (T3-style full-page)
@@ -85,6 +87,21 @@
   - Non-streaming fallback
   - Error handling
   - Connection testing
+
+- [x] **🖼️ Image Generation**
+  - Support for image generation models (GPT-5 Image, Gemini Image)
+  - Non-streaming image generation for reliable image delivery
+  - Base64 image rendering in chat
+  - Model capability badges (Image, Vision) in model selector
+  - Automatic detection of image generation models
+
+- [x] **📎 Multimodal Support (Vision & PDFs)**
+  - File attachment system with image/PDF support
+  - Thumbnail previews for attached images
+  - PDF icon display for document attachments
+  - Base64 encoding for API transmission
+  - Attachment preview area with remove buttons
+  - Support for multiple file attachments per message
 
 - [x] **Local Storage Repository**
   - Full CRUD for chats
@@ -120,7 +137,8 @@
 ### High Priority
 
 - [ ] **Dark mode toggle** - Add theme switcher in settings
-- [ ] **File attachments** - Implement upload logic (Attach button UI already added)
+- [x] ~~**File attachments**~~ ✅ Implemented with multimodal support
+- [x] ~~**Image generation**~~ ✅ Implemented with GPT-5 Image & Gemini models
 - [ ] **System prompts** - Custom instructions/personas per chat
 - [ ] **Chat renaming** - Click to edit chat title in sidebar
 - [ ] **Stop generation** - Button to cancel streaming response
@@ -185,6 +203,7 @@ src/
 │   ├── dom.js        # DOM helpers + showConfirm()
 │   ├── markdown.js   # Markdown + code highlighting
 │   ├── date.js       # Date formatting/grouping
+│   ├── files.js      # File processing (Base64 conversion)
 │   └── index.js
 │
 └── styles/
@@ -281,6 +300,7 @@ npm run preview
 | `src/utils/dom.js` | DOM helpers + showConfirm() |
 | `src/utils/markdown.js` | Markdown rendering |
 | `src/utils/date.js` | Date grouping utilities |
+| `src/utils/files.js` | File processing (Base64 conversion) |
 | `src/styles/main.css` | Custom CSS (scrollbars, animations) |
 
 ---
@@ -296,9 +316,16 @@ Edit `src/config/models.js`:
     id: 'provider/model-id',
     name: 'Display Name',
     provider: 'Provider',
-    capabilities: ['vision', 'tools'],
+    capabilities: ['vision', 'tools'],  // Add 'image' for image generation models
     description: 'Description'
 }
+
+// For image generation models, also add to IMAGE_GENERATION_MODELS array:
+export const IMAGE_GENERATION_MODELS = [
+    'openai/gpt-5-image',
+    'openai/gpt-5-image-mini',
+    'google/gemini-2.5-flash-preview-image-generation',
+];
 ```
 
 ### Adding a New Settings Tab
@@ -348,8 +375,9 @@ function createRepository() {
 
 1. **No loading state** - Initial app load doesn't show loading indicator
 2. **Mobile sidebar** - Needs overlay backdrop when open on mobile
-3. **Attach button** - UI only, file upload not yet implemented
+3. ~~**Attach button**~~ ✅ Fixed - File attachments now fully functional
 4. **Settings page** - Dark mode toggle is placeholder only (coming soon)
+5. **Large files** - No file size limit validation (could cause issues with very large images/PDFs)
 
 ---
 
