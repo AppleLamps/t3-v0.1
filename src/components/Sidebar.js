@@ -46,49 +46,46 @@ export class Sidebar {
      */
     _render() {
         return `
-            <aside id="sidebar" class="w-72 h-full bg-lamp-sidebar border-r border-lamp-border flex flex-col sidebar-transition">
+            <aside id="sidebar" class="w-64 h-full bg-lamp-sidebar border-r border-lamp-border flex flex-col sidebar-transition">
                 <!-- Logo & New Chat - Fixed Top -->
-                <div class="flex-shrink-0 p-4 border-b border-lamp-border">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-9 h-9 bg-lamp-accent rounded-lg flex items-center justify-center">
-                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                <div class="flex-shrink-0 p-3 pb-2">
+                    <div class="flex items-center gap-2 mb-3">
+                        <button id="sidebarToggleBtn" class="p-2 hover:bg-lamp-card rounded-lg transition-colors" title="Toggle Sidebar">
+                            <svg class="w-5 h-5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                             </svg>
-                        </div>
-                        <span class="text-lg font-semibold tracking-tight">${APP_NAME}</span>
+                        </button>
+                        <span class="text-base font-semibold tracking-tight text-lamp-text">${APP_NAME}</span>
                     </div>
-                    <button id="newChatBtn" class="w-full bg-lamp-accent hover:bg-lamp-hover text-white py-2.5 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                        </svg>
+                    <button id="newChatBtn" class="w-full bg-lamp-accent hover:bg-lamp-hover text-white py-2.5 px-4 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
                         New Chat
                     </button>
                 </div>
                 
                 <!-- Search - Fixed -->
-                <div class="flex-shrink-0 p-4 pb-2">
+                <div class="flex-shrink-0 px-3 pb-2">
                     <div class="relative">
                         <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                         </svg>
                         <input type="text" id="sidebarSearch" placeholder="Search your threads..." 
-                            class="w-full bg-lamp-card border border-lamp-border rounded-lg py-2 pl-10 pr-4 text-sm placeholder:text-lamp-muted focus:outline-none focus:border-lamp-accent transition-colors">
+                            class="w-full bg-transparent py-2 pl-9 pr-3 text-sm placeholder:text-lamp-muted focus:outline-none transition-colors">
                     </div>
                 </div>
                 
                 <!-- Thread List - Scrollable Middle Section -->
-                <div id="threadList" class="flex-1 overflow-y-auto px-2 py-2 min-h-0">
+                <div id="threadList" class="flex-1 overflow-y-auto px-2 py-1 min-h-0">
                     <!-- Threads will be rendered here -->
                 </div>
                 
                 <!-- User Profile / Settings - Fixed Bottom -->
-                <div class="flex-shrink-0 p-4 border-t border-lamp-border bg-lamp-sidebar">
-                    <button id="userProfileBtn" class="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-lamp-card transition-colors">
-                        <div class="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                <div class="flex-shrink-0 p-3 border-t border-lamp-border bg-lamp-sidebar">
+                    <button id="userProfileBtn" class="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-lamp-card transition-colors">
+                        <div class="w-9 h-9 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
                             <span id="sidebarUserInitial">U</span>
                         </div>
                         <div class="flex-1 text-left min-w-0">
-                            <div id="sidebarUserName" class="text-sm font-semibold truncate">User</div>
+                            <div id="sidebarUserName" class="text-sm font-medium truncate">User</div>
                             <div class="text-xs text-lamp-muted">Free</div>
                         </div>
                         <svg class="w-5 h-5 text-lamp-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -113,6 +110,7 @@ export class Sidebar {
         this.elements.userProfile = $('userProfileBtn');
         this.elements.userName = $('sidebarUserName');
         this.elements.userInitial = $('sidebarUserInitial');
+        this.elements.toggleBtn = $('sidebarToggleBtn');
     }
     
     /**
@@ -120,6 +118,11 @@ export class Sidebar {
      * @private
      */
     _bindEvents() {
+        // Sidebar toggle button
+        this.elements.toggleBtn?.addEventListener('click', () => {
+            stateManager.toggleSidebar();
+        });
+        
         // New chat button
         this.elements.newChatBtn?.addEventListener('click', () => {
             this._onNewChat();
@@ -184,19 +187,19 @@ export class Sidebar {
         
         const renderGroup = (title, chats) => {
             if (chats.length === 0) return '';
-            let groupHtml = `<div class="mb-4"><div class="px-3 py-1 text-xs font-medium text-lamp-muted uppercase tracking-wide">${title}</div>`;
+            let groupHtml = `<div class="mb-3"><div class="px-3 py-1.5 text-xs font-medium text-lamp-muted">${title}</div>`;
             
             for (const chat of chats) {
                 const isActive = chat.id === currentChatId;
                 groupHtml += `
                     <div class="thread-item group relative">
                         <button data-chat-id="${chat.id}" 
-                            class="w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${isActive ? 'bg-lamp-card border border-lamp-border' : 'hover:bg-lamp-card'}">
+                            class="w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${isActive ? 'bg-lamp-card text-lamp-text' : 'text-lamp-muted hover:text-lamp-text hover:bg-lamp-card/50'}">
                             ${escapeHtml(chat.title)}
                         </button>
-                        <div class="thread-actions absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
-                            <button data-delete-id="${chat.id}" class="p-1 hover:bg-lamp-input rounded transition-colors" title="Delete">
-                                <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div class="thread-actions absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
+                            <button data-delete-id="${chat.id}" class="p-1.5 hover:bg-lamp-input rounded-lg transition-colors" title="Delete">
+                                <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                 </svg>
                             </button>

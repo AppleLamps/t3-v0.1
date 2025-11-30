@@ -45,10 +45,10 @@ export class ChatArea {
      */
     _render() {
         return `
-            <!-- Top Bar -->
-            <header class="h-14 border-b border-lamp-border flex items-center justify-between px-4 bg-lamp-card">
+            <!-- Top Bar - Hidden in empty state, visible when chat has messages -->
+            <header id="chatHeader" style="display: none;" class="h-14 border-b border-lamp-border items-center justify-between px-4 bg-lamp-card">
                 <div class="flex items-center gap-2">
-                    <button id="toggleSidebarBtn" class="p-2 hover:bg-lamp-input rounded-lg transition-colors lg:hidden">
+                    <button id="toggleSidebarBtn" class="p-2 hover:bg-lamp-input rounded-lg transition-colors">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
                         </svg>
@@ -66,52 +66,60 @@ export class ChatArea {
             </header>
             
             <!-- Chat Area -->
-            <div id="chatArea" class="flex-1 overflow-y-auto">
+            <div id="chatArea" class="flex-1 overflow-y-auto relative">
+                <!-- Floating Settings Button (visible in empty state) -->
+                <button id="floatingSettingsBtn" class="absolute top-4 right-4 p-2 hover:bg-lamp-input rounded-lg transition-colors z-10" title="Settings">
+                    <svg class="w-5 h-5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </button>
+                
                 <!-- Welcome Screen -->
                 <div id="welcomeScreen" class="h-full flex flex-col items-center justify-center p-8">
-                    <h2 class="text-3xl font-semibold mb-6">How can I help you<span id="welcomeName"></span>?</h2>
+                    <h2 class="text-3xl font-semibold mb-8">How can I help you<span id="welcomeName"></span>?</h2>
                     
-                    <!-- Quick Action Buttons -->
-                    <div class="flex flex-wrap justify-center gap-3 mb-8">
-                        <button data-category="create" class="category-btn flex items-center gap-2 px-4 py-2.5 bg-lamp-card border border-lamp-border rounded-full hover:border-lamp-accent transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <!-- Quick Action Buttons - T3 Style Pills -->
+                    <div class="flex flex-wrap justify-center gap-2 mb-10">
+                        <button data-category="create" class="category-btn flex items-center gap-2 px-5 py-2.5 bg-lamp-input/50 border border-lamp-border rounded-full hover:bg-lamp-input hover:border-lamp-muted/30 transition-all duration-200">
+                            <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
-                            Create
+                            <span class="text-sm font-medium text-lamp-text">Create</span>
                         </button>
-                        <button data-category="explore" class="category-btn flex items-center gap-2 px-4 py-2.5 bg-lamp-card border border-lamp-border rounded-full hover:border-lamp-accent transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button data-category="explore" class="category-btn flex items-center gap-2 px-5 py-2.5 bg-lamp-input/50 border border-lamp-border rounded-full hover:bg-lamp-input hover:border-lamp-muted/30 transition-all duration-200">
+                            <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                             </svg>
-                            Explore
+                            <span class="text-sm font-medium text-lamp-text">Explore</span>
                         </button>
-                        <button data-category="code" class="category-btn flex items-center gap-2 px-4 py-2.5 bg-lamp-card border border-lamp-border rounded-full hover:border-lamp-accent transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button data-category="code" class="category-btn flex items-center gap-2 px-5 py-2.5 bg-lamp-input/50 border border-lamp-border rounded-full hover:bg-lamp-input hover:border-lamp-muted/30 transition-all duration-200">
+                            <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
                             </svg>
-                            Code
+                            <span class="text-sm font-medium text-lamp-text">Code</span>
                         </button>
-                        <button data-category="learn" class="category-btn flex items-center gap-2 px-4 py-2.5 bg-lamp-card border border-lamp-border rounded-full hover:border-lamp-accent transition-colors">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <button data-category="learn" class="category-btn flex items-center gap-2 px-5 py-2.5 bg-lamp-input/50 border border-lamp-border rounded-full hover:bg-lamp-input hover:border-lamp-muted/30 transition-all duration-200">
+                            <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
                             </svg>
-                            Learn
+                            <span class="text-sm font-medium text-lamp-text">Learn</span>
                         </button>
                     </div>
                     
-                    <!-- Suggested Prompts -->
-                    <div id="suggestedPrompts" class="w-full max-w-2xl space-y-2">
-                        <button data-prompt="How does AI work?" class="prompt-btn w-full text-left p-4 bg-lamp-card border border-lamp-border rounded-xl hover:border-lamp-accent transition-colors">
+                    <!-- Suggested Prompts - T3 Style with left accent -->
+                    <div id="suggestedPrompts" class="w-full max-w-xl space-y-1">
+                        <button data-prompt="How does AI work?" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
                             How does AI work?
                         </button>
-                        <button data-prompt="Explain quantum computing in simple terms" class="prompt-btn w-full text-left p-4 bg-lamp-card border border-lamp-border rounded-xl hover:border-lamp-accent transition-colors">
-                            Explain quantum computing in simple terms
+                        <button data-prompt="Are black holes real?" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
+                            Are black holes real?
                         </button>
-                        <button data-prompt="Write a Python function to sort a list" class="prompt-btn w-full text-left p-4 bg-lamp-card border border-lamp-border rounded-xl hover:border-lamp-accent transition-colors">
-                            Write a Python function to sort a list
+                        <button data-prompt="How many Rs are in the word 'strawberry'?" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
+                            How many Rs are in the word "strawberry"?
                         </button>
-                        <button data-prompt="What are the best practices for web development?" class="prompt-btn w-full text-left p-4 bg-lamp-card border border-lamp-border rounded-xl hover:border-lamp-accent transition-colors">
-                            What are the best practices for web development?
+                        <button data-prompt="What is the meaning of life?" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
+                            What is the meaning of life?
                         </button>
                     </div>
                 </div>
@@ -130,11 +138,13 @@ export class ChatArea {
      */
     _cacheElements() {
         this.elements.chatArea = $('chatArea');
+        this.elements.chatHeader = $('chatHeader');
         this.elements.welcomeScreen = $('welcomeScreen');
         this.elements.messagesContainer = $('messagesContainer');
         this.elements.chatTitle = $('chatTitle');
         this.elements.welcomeName = $('welcomeName');
         this.elements.suggestedPrompts = $('suggestedPrompts');
+        this.elements.floatingSettingsBtn = $('floatingSettingsBtn');
     }
     
     /**
@@ -147,8 +157,13 @@ export class ChatArea {
             stateManager.toggleSidebar();
         });
         
-        // Settings button
+        // Settings button (header)
         $('headerSettingsBtn')?.addEventListener('click', () => {
+            if (this.onSettingsClick) this.onSettingsClick();
+        });
+        
+        // Floating settings button (welcome screen)
+        $('floatingSettingsBtn')?.addEventListener('click', () => {
             if (this.onSettingsClick) this.onSettingsClick();
         });
         
@@ -220,13 +235,19 @@ export class ChatArea {
         const user = stateManager.user;
         
         if (!chat || chat.messages.length === 0) {
-            this.elements.welcomeScreen?.classList.remove('hidden');
-            this.elements.messagesContainer?.classList.add('hidden');
+            // Show welcome screen, hide header (T3-style: no header in empty state)
+            if (this.elements.welcomeScreen) this.elements.welcomeScreen.style.display = 'flex';
+            if (this.elements.messagesContainer) this.elements.messagesContainer.style.display = 'none';
+            if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'none';
+            if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'block';
             return;
         }
         
-        this.elements.welcomeScreen?.classList.add('hidden');
-        this.elements.messagesContainer?.classList.remove('hidden');
+        // Show header, hide welcome screen (active chat mode)
+        if (this.elements.welcomeScreen) this.elements.welcomeScreen.style.display = 'none';
+        if (this.elements.messagesContainer) this.elements.messagesContainer.style.display = 'block';
+        if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
+        if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
         
         const userInitial = (user?.name || 'U').charAt(0).toUpperCase();
         
@@ -331,7 +352,7 @@ export class ChatArea {
         
         if (this.elements.suggestedPrompts) {
             setHtml(this.elements.suggestedPrompts, categoryPrompts.map(p => `
-                <button data-prompt="${escapeHtml(p)}" class="prompt-btn w-full text-left p-4 bg-lamp-card border border-lamp-border rounded-xl hover:border-lamp-accent transition-colors">
+                <button data-prompt="${escapeHtml(p)}" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
                     ${escapeHtml(p)}
                 </button>
             `).join(''));

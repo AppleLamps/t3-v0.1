@@ -1,15 +1,15 @@
 /* LampChat - Main Styles
    ====================== */
 
-/* Custom scrollbars */
+/* Custom scrollbars - T3 Style (very subtle) */
 * {
     scrollbar-width: thin;
-    scrollbar-color: #D1D1D1 transparent;
+    scrollbar-color: rgba(0, 0, 0, 0.1) transparent;
 }
 
 *::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
 }
 
 *::-webkit-scrollbar-track {
@@ -17,12 +17,12 @@
 }
 
 *::-webkit-scrollbar-thumb {
-    background-color: #D1D1D1;
-    border-radius: 3px;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-    background-color: #B0B0B0;
+    background-color: rgba(0, 0, 0, 0.2);
 }
 
 /* Message content styles */
@@ -209,6 +209,53 @@ pre:hover .copy-button {
     #sidebar.-translate-x-full {
         transform: translateX(-100%);
     }
+}
+
+/* Smooth transitions for interactive elements */
+button, a, input, textarea {
+    transition: all 0.15s ease;
+}
+
+/* Category button active state */
+.category-btn.active {
+    background-color: rgba(26, 26, 26, 0.08);
+    border-color: rgba(26, 26, 26, 0.2);
+}
+
+/* Input focus glow */
+input:focus, textarea:focus {
+    box-shadow: 0 0 0 1px rgba(26, 26, 26, 0.05);
+}
+
+/* Subtle card hover lift */
+.hover-lift {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hover-lift:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Model dropdown z-index fix */
+#modelDropdown {
+    z-index: 9999 !important;
+    position: absolute !important;
+}
+
+/* Ensure input container doesn't clip dropdown */
+#inputContainer {
+    position: relative;
+    z-index: 10;
+}
+
+#inputContainer form {
+    position: relative;
+}
+
+#inputContainer .relative {
+    position: relative;
+    z-index: 50;
 }
 
 /* Print styles */
