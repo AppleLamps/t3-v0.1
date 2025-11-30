@@ -199,15 +199,13 @@ class LampChat {
                 selectedModel,
                 messagesForContext,
                 {
-                    onToken: async (token) => {
+                    onToken: (token) => {
                         streamedContent += token;
-                        await stateManager.updateMessage(messageId, {
-                            content: streamedContent,
-                        });
+                        // Use memory-only update during streaming (no disk write)
+                        stateManager.updateStreamingMessage(messageId, streamedContent);
                     },
                     onComplete: async (fullContent, stats, extra) => {
                         this.chatArea.hideTypingIndicator();
-                        stateManager.setStreaming(false);
                         
                         const updateData = {
                             content: fullContent,
@@ -225,7 +223,10 @@ class LampChat {
                             updateData.generatedImages = extra.images;
                         }
                         
+                        // Persist final content + stats BEFORE ending streaming
+                        // This ensures the single render triggered by setStreaming(false) has all data
                         await stateManager.updateMessage(messageId, updateData);
+                        stateManager.setStreaming(false);
                     },
                     onError: async (error) => {
                         console.error('Regenerate error:', error);
@@ -360,16 +361,14 @@ class LampChat {
                     selectedModel,
                     messages,
                     {
-                        onToken: async (token) => {
+                        onToken: (token) => {
                             // Accumulate locally to avoid race condition
                             streamedContent += token;
-                            await stateManager.updateMessage(assistantMsg.id, {
-                                content: streamedContent,
-                            });
+                            // Use memory-only update during streaming (no disk write)
+                            stateManager.updateStreamingMessage(assistantMsg.id, streamedContent);
                         },
                     onComplete: async (fullContent, stats, extra) => {
                         this.chatArea.hideTypingIndicator();
-                        stateManager.setStreaming(false);
                         
                         // Build update data
                         const updateData = {
@@ -388,7 +387,10 @@ class LampChat {
                             updateData.generatedImages = extra.images;
                         }
                         
+                        // Persist final content + stats BEFORE ending streaming
+                        // This ensures the single render triggered by setStreaming(false) has all data
                         await stateManager.updateMessage(assistantMsg.id, updateData);
+                        stateManager.setStreaming(false);
                     },
                         onError: async (error) => {
                             console.error('Stream error:', error);

@@ -22,6 +22,10 @@ export class ChatArea {
         this._unsubscribers = [];
         this._streamingMessageId = null;
         this._streamingElement = null;
+        
+        // Performance: Buffer for streaming content updates
+        this._pendingStreamContent = null;
+        this._rafId = null;
     }
     
     /**
@@ -257,9 +261,17 @@ export class ChatArea {
             stateManager.subscribe('userUpdated', () => this._updateWelcomeName()),
             stateManager.subscribe('streamingChanged', (state, isStreaming) => {
                 if (!isStreaming) {
-                    // Streaming ended - do a full re-render to show stats
+                    // Streaming ended - cleanup and do a full re-render to show stats
                     this._streamingMessageId = null;
                     this._streamingElement = null;
+                    this._pendingStreamContent = null;
+                    
+                    // Cancel any pending animation frame
+                    if (this._rafId) {
+                        cancelAnimationFrame(this._rafId);
+                        this._rafId = null;
+                    }
+                    
                     this.renderMessages();
                 }
             }),
@@ -272,12 +284,23 @@ export class ChatArea {
      */
     _onMessageAdded(data) {
         const msg = data?.message;
+        const chat = stateManager.currentChat;
+        
+        // If this is the first message, we need to switch from welcome screen to chat view
+        if (chat && chat.messages.length === 1) {
+            this.renderMessages();
+            return;
+        }
+        
         if (msg?.role === 'assistant' && stateManager.isStreaming) {
             // New assistant message during streaming - append it and track for updates
             this._streamingMessageId = msg.id;
             this._appendStreamingMessage(msg);
+        } else if (msg?.role === 'user') {
+            // User message - append without full re-render
+            this._appendUserMessage(msg);
         } else {
-            // Regular message add - full render
+            // Fallback - full render
             this.renderMessages();
         }
     }
@@ -288,13 +311,42 @@ export class ChatArea {
      */
     _onMessageUpdated(data) {
         const msg = data?.message;
-        if (this._streamingMessageId && msg?.id === this._streamingMessageId && this._streamingElement) {
-            // Streaming update - just update the content, don't re-render everything
-            this._updateStreamingContent(msg.content);
-        } else if (!stateManager.isStreaming) {
-            // Not streaming - do full render
-            this.renderMessages();
+        
+        // If we're currently streaming, only update the streaming element
+        // DO NOT call renderMessages() which would rebuild the entire DOM
+        if (this._streamingMessageId) {
+            if (msg?.id === this._streamingMessageId && this._streamingElement) {
+                // Streaming update - just update the content efficiently
+                this._updateStreamingContent(msg.content);
+            }
+            // Ignore updates to other messages during streaming
+            return;
         }
+        
+        // Not streaming - do full render
+        this.renderMessages();
+    }
+    
+    /**
+     * Append a user message without full re-render
+     * @private
+     */
+    _appendUserMessage(msg) {
+        // Ensure messages container is visible (hide welcome screen if needed)
+        if (this.elements.welcomeScreen) this.elements.welcomeScreen.style.display = 'none';
+        if (this.elements.messagesContainer) this.elements.messagesContainer.style.display = 'block';
+        if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
+        if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
+        
+        const html = `
+            <div class="flex animate-fade-in justify-end">
+                <div class="bg-lamp-accent text-white rounded-2xl px-4 py-2.5 max-w-[80%]">
+                    ${this._renderUserMessageContent(msg)}
+                </div>
+            </div>
+        `;
+        this.elements.messagesContainer?.insertAdjacentHTML('beforeend', html);
+        scrollToBottom(this.elements.chatArea);
     }
     
     /**
@@ -318,14 +370,28 @@ export class ChatArea {
     }
     
     /**
-     * Update streaming message content efficiently
+     * Update streaming message content efficiently using requestAnimationFrame
+     * Buffers content and only renders during animation frames to prevent UI blocking
      * @private
      */
     _updateStreamingContent(content) {
-        if (this._streamingElement && content) {
-            this._streamingElement.innerHTML = renderMarkdown(content);
-            scrollToBottom(this.elements.chatArea);
-        }
+        if (!this._streamingElement || !content) return;
+        
+        // Buffer the content for the next animation frame
+        this._pendingStreamContent = content;
+        
+        // If we already have a pending animation frame, skip scheduling another
+        if (this._rafId) return;
+        
+        // Schedule the DOM update for the next animation frame
+        this._rafId = requestAnimationFrame(() => {
+            this._rafId = null;
+            
+            if (this._pendingStreamContent && this._streamingElement) {
+                this._streamingElement.innerHTML = renderMarkdown(this._pendingStreamContent);
+                scrollToBottom(this.elements.chatArea);
+            }
+        });
     }
     
     /**
@@ -670,5 +736,11 @@ export class ChatArea {
      */
     destroy() {
         this._unsubscribers.forEach(unsub => unsub());
+        
+        // Cancel any pending animation frame
+        if (this._rafId) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
     }
 }

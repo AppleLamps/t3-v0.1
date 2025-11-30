@@ -241,6 +241,30 @@ class StateManager {
     }
     
     /**
+     * Update a streaming message in memory only (no disk write)
+     * Used during streaming to avoid blocking the main thread with localStorage writes
+     * @param {string} messageId 
+     * @param {string} content - The streaming content
+     * @returns {Object|null} - The updated message or null
+     */
+    updateStreamingMessage(messageId, content) {
+        if (!this.state.currentChatId) return null;
+        
+        const chat = this.state.chats[this.state.currentChatId];
+        if (!chat) return null;
+        
+        // Find and update the message in memory
+        const message = chat.messages.find(m => m.id === messageId);
+        if (!message) return null;
+        
+        message.content = content;
+        
+        // Notify listeners without persisting to storage
+        this._notify('messageUpdated', { chat, message });
+        return message;
+    }
+    
+    /**
      * Generate title from message content
      * @private
      * @param {string} content 
