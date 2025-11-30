@@ -46,7 +46,7 @@ export class Sidebar {
      */
     _render() {
         return `
-            <aside id="sidebar" class="w-64 h-full bg-lamp-sidebar border-r border-lamp-border flex flex-col transition-all duration-300 ease-in-out overflow-hidden">
+            <aside id="sidebar" class="w-64 h-full bg-lamp-sidebar flex flex-col transition-all duration-300 ease-in-out overflow-hidden">
                 <!-- Logo & New Chat - Fixed Top -->
                 <div class="flex-shrink-0 p-3 pb-2">
                     <div class="flex items-center gap-2 mb-3">
@@ -232,11 +232,11 @@ export class Sidebar {
     _toggleVisibility(open) {
         if (this.elements.sidebar) {
             if (open) {
-                this.elements.sidebar.classList.remove('w-0', 'border-r-0');
+                this.elements.sidebar.classList.remove('w-0');
                 this.elements.sidebar.classList.add('w-64');
             } else {
                 this.elements.sidebar.classList.remove('w-64');
-                this.elements.sidebar.classList.add('w-0', 'border-r-0');
+                this.elements.sidebar.classList.add('w-0');
             }
         }
     }

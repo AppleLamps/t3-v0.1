@@ -14,14 +14,14 @@
         rel="stylesheet">
 </head>
 
-<body class="bg-lamp-bg text-lamp-text font-sans antialiased">
+<body class="bg-lamp-sidebar text-lamp-text font-sans antialiased">
     <!-- App Root -->
     <div id="app" class="flex h-screen overflow-hidden">
         <!-- Sidebar Container -->
         <div id="sidebarContainer"></div>
 
-        <!-- Main Content -->
-        <main class="flex-1 flex flex-col min-w-0">
+        <!-- Main Content - The "white card" floating on sidebar background -->
+        <main class="flex-1 flex flex-col min-w-0 bg-lamp-card rounded-tl-3xl border-l border-t border-lamp-border overflow-hidden">
             <!-- Chat Container -->
             <div id="chatContainer" class="flex-1 flex flex-col min-h-0"></div>
 

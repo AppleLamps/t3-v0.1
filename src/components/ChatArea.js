@@ -49,7 +49,7 @@ export class ChatArea {
     _render() {
         return `
             <!-- Top Bar - Hidden in empty state, visible when chat has messages -->
-            <header id="chatHeader" style="display: none;" class="h-14 border-b border-lamp-border items-center justify-between px-4 bg-lamp-card">
+            <header id="chatHeader" style="display: none;" class="h-12 items-center justify-between px-4">
                 <div class="flex items-center gap-2">
                     <button id="toggleSidebarBtn" class="p-2 hover:bg-lamp-input rounded-lg transition-colors">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
