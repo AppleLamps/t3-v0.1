@@ -175,9 +175,13 @@ export class OpenRouterService {
      * @param {StreamCallbacks} callbacks - Streaming callbacks
      * @param {Object} [options] - Additional options
      * @param {Attachment[]} [attachments] - Attachments for the latest user message
+     * @param {number} [retryCount=0] - Current retry attempt (internal use)
      * @returns {Promise<void>}
      */
-    async chatStream(model, messages, callbacks, options = {}, attachments = []) {
+    async chatStream(model, messages, callbacks, options = {}, attachments = [], retryCount = 0) {
+        const MAX_RETRIES = 3;
+        const BASE_DELAY = 1000; // 1 second
+        
         if (!this.apiKey) {
             callbacks.onError(new Error('API key not configured'));
             return;
@@ -204,6 +208,8 @@ export class OpenRouterService {
         let tokenCount = 0;
         let usageStats = null;
         let generatedImages = [];
+        let parseFailureCount = 0;
+        const MAX_PARSE_FAILURES = 10; // Track parse failures to detect issues
         
         try {
             const requestBody = {
@@ -226,20 +232,88 @@ export class OpenRouterService {
             });
             
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error?.message || `API request failed: ${response.status}`);
+                const status = response.status;
+                
+                // Retry on rate limit (429) or server errors (5xx)
+                if ((status === 429 || (status >= 500 && status < 600)) && retryCount < MAX_RETRIES) {
+                    const delay = BASE_DELAY * Math.pow(2, retryCount); // Exponential backoff
+                    console.log(`Retrying after ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                    
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return this.chatStream(model, messages, callbacks, options, attachments, retryCount + 1);
+                }
+                
+                // Non-retryable error or max retries reached
+                const error = await response.json().catch(() => ({ error: { message: `HTTP ${status}` } }));
+                throw new Error(error.error?.message || `API request failed: ${status}`);
             }
             
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullContent = '';
+            let buffer = ''; // Accumulate incomplete lines
             
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
                 
-                const chunk = decoder.decode(value);
-                const lines = chunk.split('\n');
+                if (done) {
+                    // Process any remaining buffer
+                    if (buffer.trim()) {
+                        // Try to parse remaining buffer
+                        const lines = buffer.split('\n');
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                const data = line.slice(6);
+                                if (data === '[DONE]') continue;
+                                
+                                try {
+                                    const parsed = JSON.parse(data);
+                                    
+                                    // Check for usage stats
+                                    if (parsed.usage) {
+                                        usageStats = parsed.usage;
+                                    }
+                                    
+                                    // Handle text content
+                                    const content = parsed.choices?.[0]?.delta?.content || '';
+                                    if (content) {
+                                        if (firstTokenTime === null) {
+                                            firstTokenTime = performance.now();
+                                        }
+                                        tokenCount++;
+                                        fullContent += content;
+                                        callbacks.onToken(content);
+                                    }
+
+                                    // Handle generated images
+                                    const images = parsed.choices?.[0]?.delta?.images || 
+                                                  parsed.choices?.[0]?.message?.images;
+                                    if (images && images.length > 0) {
+                                        for (const img of images) {
+                                            const imgUrl = img.image_url?.url || img.imageUrl?.url || img.url;
+                                            if (imgUrl) {
+                                                generatedImages.push({ url: imgUrl });
+                                            }
+                                        }
+                                    }
+                                } catch (e) {
+                                    parseFailureCount++;
+                                    if (parseFailureCount <= MAX_PARSE_FAILURES) {
+                                        console.warn('Failed to parse SSE data:', e, 'Data:', data);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+                
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+                
+                // Split by newlines, keeping incomplete line in buffer
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep last incomplete line in buffer
                 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
@@ -278,10 +352,19 @@ export class OpenRouterService {
                                 }
                             }
                         } catch (e) {
-                            // Ignore parse errors for incomplete chunks
+                            parseFailureCount++;
+                            // Log parse errors (don't silently ignore)
+                            if (parseFailureCount <= MAX_PARSE_FAILURES) {
+                                console.warn('Failed to parse SSE data:', e, 'Data:', data);
+                            }
                         }
                     }
                 }
+            }
+            
+            // Report if too many parse failures occurred
+            if (parseFailureCount > MAX_PARSE_FAILURES) {
+                console.warn(`Warning: ${parseFailureCount} parse failures occurred during streaming. Some data may be incomplete.`);
             }
             
             const endTime = performance.now();
@@ -303,9 +386,18 @@ export class OpenRouterService {
             callbacks.onComplete(fullContent, stats, { images: generatedImages });
             
         } catch (error) {
+            // Only retry network errors if we haven't exceeded retries
+            if (retryCount < MAX_RETRIES && error.name === 'TypeError' && error.message.includes('fetch')) {
+                const delay = BASE_DELAY * Math.pow(2, retryCount);
+                console.log(`Retrying network error after ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return this.chatStream(model, messages, callbacks, options, attachments, retryCount + 1);
+            }
+            
             callbacks.onError(error);
         }
     }
+
 
     /**
      * Generate images using an image generation model

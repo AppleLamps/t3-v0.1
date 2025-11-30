@@ -2,10 +2,12 @@
 // ===================
 
 import { stateManager } from '../services/state.js';
-import { $, escapeHtml, setHtml, scrollToBottom } from '../utils/dom.js';
+import { $, setHtml, scrollToBottom } from '../utils/dom.js';
 import { renderMarkdown, processMessageContent } from '../utils/markdown.js';
-import { getModelById } from '../config/models.js';
-import { formatFileSize } from '../utils/files.js';
+import { MessageRenderer } from './chat/MessageRenderer.js';
+import { TypingIndicator } from './chat/TypingIndicator.js';
+import { WelcomeScreen } from './chat/WelcomeScreen.js';
+import { PromptSelector } from './chat/PromptSelector.js';
 
 /**
  * Chat area component - displays messages and welcome screen
@@ -26,6 +28,12 @@ export class ChatArea {
         // Performance: Buffer for streaming content updates
         this._pendingStreamContent = null;
         this._rafId = null;
+        
+        // Sub-components
+        this._messageRenderer = null;
+        this._typingIndicator = null;
+        this._welcomeScreen = null;
+        this._promptSelector = null;
     }
     
     /**
@@ -41,6 +49,7 @@ export class ChatArea {
         
         container.innerHTML = this._render();
         this._cacheElements();
+        this._initSubComponents();
         this._bindEvents();
         this._subscribeToState();
         this.refresh();
@@ -83,51 +92,7 @@ export class ChatArea {
                 
                 <!-- Welcome Screen -->
                 <div id="welcomeScreen" class="h-full flex flex-col items-center justify-center p-8">
-                    <h2 class="text-3xl font-semibold mb-8">How can I help you<span id="welcomeName"></span>?</h2>
-                    
-                    <!-- Quick Action Buttons - T3 Style Pills -->
-                    <div class="flex flex-wrap justify-center gap-2 mb-10">
-                        <button data-category="create" class="category-btn flex items-center gap-2 px-5 py-2.5 bg-lamp-input/50 border border-lamp-border rounded-full hover:bg-lamp-input hover:border-lamp-muted/30 transition-all duration-200">
-                            <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                            </svg>
-                            <span class="text-sm font-medium text-lamp-text">Create</span>
-                        </button>
-                        <button data-category="explore" class="category-btn flex items-center gap-2 px-5 py-2.5 bg-lamp-input/50 border border-lamp-border rounded-full hover:bg-lamp-input hover:border-lamp-muted/30 transition-all duration-200">
-                            <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-                            </svg>
-                            <span class="text-sm font-medium text-lamp-text">Explore</span>
-                        </button>
-                        <button data-category="code" class="category-btn flex items-center gap-2 px-5 py-2.5 bg-lamp-input/50 border border-lamp-border rounded-full hover:bg-lamp-input hover:border-lamp-muted/30 transition-all duration-200">
-                            <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
-                            </svg>
-                            <span class="text-sm font-medium text-lamp-text">Code</span>
-                        </button>
-                        <button data-category="learn" class="category-btn flex items-center gap-2 px-5 py-2.5 bg-lamp-input/50 border border-lamp-border rounded-full hover:bg-lamp-input hover:border-lamp-muted/30 transition-all duration-200">
-                            <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
-                            </svg>
-                            <span class="text-sm font-medium text-lamp-text">Learn</span>
-                        </button>
-                    </div>
-                    
-                    <!-- Suggested Prompts - T3 Style with left accent -->
-                    <div id="suggestedPrompts" class="w-full max-w-xl space-y-1">
-                        <button data-prompt="How does AI work?" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
-                            How does AI work?
-                        </button>
-                        <button data-prompt="Are black holes real?" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
-                            Are black holes real?
-                        </button>
-                        <button data-prompt="How many Rs are in the word 'strawberry'?" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
-                            How many Rs are in the word "strawberry"?
-                        </button>
-                        <button data-prompt="What is the meaning of life?" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
-                            What is the meaning of life?
-                        </button>
-                    </div>
+                    <!-- Content will be rendered by WelcomeScreen component -->
                 </div>
                 
                 <!-- Messages Container -->
@@ -151,6 +116,46 @@ export class ChatArea {
         this.elements.suggestedPrompts = $('suggestedPrompts');
         this.elements.floatingSettingsBtn = $('floatingSettingsBtn');
     }
+
+    /**
+     * Initialize sub-components
+     * @private
+     */
+    _initSubComponents() {
+        // Initialize message renderer
+        this._messageRenderer = new MessageRenderer();
+        
+        // Initialize typing indicator
+        this._typingIndicator = new TypingIndicator(
+            this.elements.messagesContainer,
+            this.elements.chatArea
+        );
+        
+        // Initialize welcome screen
+        this._welcomeScreen = new WelcomeScreen(
+            this.elements.welcomeScreen,
+            this.elements.welcomeName,
+            this.elements.suggestedPrompts
+        );
+        
+        // Render welcome screen content
+        if (this.elements.welcomeScreen) {
+            this.elements.welcomeScreen.innerHTML = this._welcomeScreen.render();
+            // Re-cache welcomeName and suggestedPrompts after rendering
+            this.elements.welcomeName = $('welcomeName');
+            this.elements.suggestedPrompts = $('suggestedPrompts');
+        }
+        
+        // Initialize prompt selector
+        this._promptSelector = new PromptSelector(
+            this.elements.suggestedPrompts,
+            (prompt) => {
+                if (this.onPromptSelect) {
+                    this.onPromptSelect(prompt);
+                }
+            }
+        );
+    }
     
     /**
      * Bind event handlers
@@ -172,20 +177,18 @@ export class ChatArea {
             if (this.onSettingsClick) this.onSettingsClick();
         });
         
-        // Category buttons
-        document.querySelectorAll('.category-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                this._setPromptCategory(btn.dataset.category);
-            });
+        // Category buttons (delegated)
+        this.elements.welcomeScreen?.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-category]');
+            if (btn && this._promptSelector) {
+                this._promptSelector.setCategory(btn.dataset.category);
+            }
         });
         
         // Prompt buttons (delegated)
-        this.elements.suggestedPrompts?.addEventListener('click', (e) => {
-            const btn = e.target.closest('[data-prompt]');
-            if (btn && this.onPromptSelect) {
-                this.onPromptSelect(btn.dataset.prompt);
-            }
-        });
+        if (this._promptSelector) {
+            this._promptSelector.bindPromptSelection(this.elements.suggestedPrompts);
+        }
         
         // Message actions (delegated)
         this.elements.messagesContainer?.addEventListener('click', (e) => {
@@ -214,7 +217,7 @@ export class ChatArea {
         if (!msg) return;
         
         // Get text content (handle both string and multimodal array)
-        const textContent = this._extractTextContent(msg.content);
+        const textContent = this._messageRenderer.extractTextContent(msg.content);
         
         try {
             await navigator.clipboard.writeText(textContent);
@@ -228,25 +231,6 @@ export class ChatArea {
         } catch (err) {
             console.error('Copy failed:', err);
         }
-    }
-
-    /**
-     * Extract text content from message content (handles string or multimodal array)
-     * @private
-     * @param {string|Array} content
-     * @returns {string}
-     */
-    _extractTextContent(content) {
-        if (typeof content === 'string') {
-            return content;
-        }
-        if (Array.isArray(content)) {
-            return content
-                .filter(item => item.type === 'text')
-                .map(item => item.text)
-                .join('\n');
-        }
-        return '';
     }
     
     /**
@@ -341,7 +325,7 @@ export class ChatArea {
         const html = `
             <div class="flex animate-fade-in justify-end">
                 <div class="bg-lamp-accent text-white rounded-2xl px-4 py-2.5 max-w-[80%]">
-                    ${this._renderUserMessageContent(msg)}
+                    ${this._messageRenderer.renderUserMessageContent(msg)}
                 </div>
             </div>
         `;
@@ -408,165 +392,9 @@ export class ChatArea {
      */
     _updateWelcomeName() {
         const user = stateManager.user;
-        if (this.elements.welcomeName) {
-            this.elements.welcomeName.textContent = user?.name ? `, ${user.name}` : '';
+        if (this._welcomeScreen) {
+            this._welcomeScreen.updateName(user?.name);
         }
-    }
-
-    /**
-     * Render user message content (handles multimodal)
-     * @private
-     * @param {Object} msg - The message object
-     * @returns {string} - HTML string
-     */
-    _renderUserMessageContent(msg) {
-        const content = msg.content;
-        const attachments = msg.attachments || [];
-
-        // If content is a string (legacy or no attachments)
-        if (typeof content === 'string') {
-            let html = `<div class="message-content">${escapeHtml(content)}</div>`;
-            
-            // Render attachments if present
-            if (attachments.length > 0) {
-                html += this._renderUserAttachments(attachments);
-            }
-            
-            return html;
-        }
-
-        // If content is multimodal array
-        if (Array.isArray(content)) {
-            let html = '';
-            
-            // Render text content first
-            const textParts = content.filter(item => item.type === 'text');
-            if (textParts.length > 0) {
-                html += `<div class="message-content">${escapeHtml(textParts.map(p => p.text).join('\n'))}</div>`;
-            }
-            
-            // Render images
-            const imageParts = content.filter(item => item.type === 'image_url');
-            if (imageParts.length > 0) {
-                html += '<div class="flex flex-wrap gap-2 mt-2">';
-                for (const img of imageParts) {
-                    const url = img.image_url?.url || '';
-                    html += `
-                        <div class="relative">
-                            <img src="${url}" alt="Attached image" 
-                                class="max-w-48 max-h-48 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                onclick="window.open('${url}', '_blank')">
-                        </div>
-                    `;
-                }
-                html += '</div>';
-            }
-
-            // Render PDF files
-            const fileParts = content.filter(item => item.type === 'file');
-            if (fileParts.length > 0) {
-                html += '<div class="flex flex-wrap gap-2 mt-2">';
-                for (const file of fileParts) {
-                    const filename = file.file?.filename || 'Document.pdf';
-                    html += `
-                        <div class="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-lg">
-                            <svg class="w-5 h-5 text-red-300" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4z"/>
-                            </svg>
-                            <span class="text-sm">${escapeHtml(filename)}</span>
-                        </div>
-                    `;
-                }
-                html += '</div>';
-            }
-            
-            return html;
-        }
-
-        return '';
-    }
-
-    /**
-     * Render user attachments
-     * @private
-     * @param {Array} attachments
-     * @returns {string} - HTML string
-     */
-    _renderUserAttachments(attachments) {
-        if (!attachments || attachments.length === 0) return '';
-
-        let html = '<div class="flex flex-wrap gap-2 mt-2">';
-        
-        for (const att of attachments) {
-            if (att.type === 'image') {
-                html += `
-                    <div class="relative">
-                        <img src="${att.dataUrl}" alt="${escapeHtml(att.name)}" 
-                            class="max-w-48 max-h-48 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                            onclick="window.open('${att.dataUrl}', '_blank')">
-                    </div>
-                `;
-            } else if (att.type === 'pdf') {
-                html += `
-                    <div class="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-lg">
-                        <svg class="w-5 h-5 text-red-300" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4z"/>
-                        </svg>
-                        <span class="text-sm">${escapeHtml(att.name)}</span>
-                    </div>
-                `;
-            }
-        }
-        
-        html += '</div>';
-        return html;
-    }
-
-    /**
-     * Render assistant message content (handles generated images)
-     * @private
-     * @param {Object} msg - The message object
-     * @returns {string} - HTML string
-     */
-    _renderAssistantMessageContent(msg) {
-        let html = '';
-        
-        // Render text content
-        if (msg.content) {
-            html += `<div class="message-content prose prose-sm max-w-none text-lamp-text">${renderMarkdown(msg.content)}</div>`;
-        }
-        
-        // Render generated images
-        const images = msg.generatedImages || msg.images || [];
-        if (images.length > 0) {
-            html += '<div class="flex flex-wrap gap-3 mt-4">';
-            for (const img of images) {
-                const url = img.url || img.image_url?.url || '';
-                if (url) {
-                    html += `
-                        <div class="relative group/img">
-                            <img src="${url}" alt="Generated image" 
-                                class="max-w-full rounded-xl shadow-lg cursor-pointer hover:shadow-xl transition-shadow"
-                                style="max-height: 400px;"
-                                onclick="window.open('${url}', '_blank')">
-                            <div class="absolute bottom-2 right-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
-                                <a href="${url}" download="generated-image.png" 
-                                    class="flex items-center gap-1 px-2 py-1 bg-black/70 text-white text-xs rounded-lg hover:bg-black/90"
-                                    onclick="event.stopPropagation()">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                                    </svg>
-                                    Download
-                                </a>
-                            </div>
-                        </div>
-                    `;
-                }
-            }
-            html += '</div>';
-        }
-        
-        return html;
     }
     
     /**
@@ -578,7 +406,7 @@ export class ChatArea {
         
         if (!chat || chat.messages.length === 0) {
             // Show welcome screen, hide header (T3-style: no header in empty state)
-            if (this.elements.welcomeScreen) this.elements.welcomeScreen.style.display = 'flex';
+            if (this._welcomeScreen) this._welcomeScreen.show();
             if (this.elements.messagesContainer) this.elements.messagesContainer.style.display = 'none';
             if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'none';
             if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'block';
@@ -586,7 +414,7 @@ export class ChatArea {
         }
         
         // Show header, hide welcome screen (active chat mode)
-        if (this.elements.welcomeScreen) this.elements.welcomeScreen.style.display = 'none';
+        if (this._welcomeScreen) this._welcomeScreen.hide();
         if (this.elements.messagesContainer) this.elements.messagesContainer.style.display = 'block';
         if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
         if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
@@ -599,22 +427,18 @@ export class ChatArea {
                 html += `
                     <div class="flex animate-fade-in justify-end">
                         <div class="bg-lamp-accent text-white rounded-2xl px-4 py-2.5 max-w-[80%]">
-                            ${this._renderUserMessageContent(msg)}
+                            ${this._messageRenderer.renderUserMessageContent(msg)}
                         </div>
                     </div>
                 `;
             } else {
                 // Assistant message with hover actions
                 const stats = msg.stats;
-                const modelName = stats?.model ? (getModelById(stats.model)?.name || stats.model.split('/').pop()) : '';
-                const tokPerSec = stats?.tokensPerSecond ? stats.tokensPerSecond.toFixed(2) : '';
-                const tokens = stats?.completionTokens || '';
-                const ttft = stats?.timeToFirstToken ? stats.timeToFirstToken.toFixed(2) : '';
                 
                 html += `
                     <div class="group flex flex-col animate-fade-in">
                         <div class="max-w-[80%]">
-                            ${this._renderAssistantMessageContent(msg)}
+                            ${this._messageRenderer.renderAssistantMessageContent(msg)}
                         </div>
                         <div class="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                             <button data-copy-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Copy">
@@ -627,14 +451,7 @@ export class ChatArea {
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                                 </svg>
                             </button>
-                            ${stats ? `
-                                <div class="flex items-center gap-4 text-xs text-lamp-muted">
-                                    ${modelName ? `<span>${modelName}</span>` : ''}
-                                    ${tokPerSec ? `<span class="flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>${tokPerSec} tok/sec</span>` : ''}
-                                    ${tokens ? `<span class="flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>${tokens} tokens</span>` : ''}
-                                    ${ttft ? `<span class="flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Time-to-First: ${ttft} sec</span>` : ''}
-                                </div>
-                            ` : ''}
+                            ${this._messageRenderer.renderMessageStats(stats)}
                         </div>
                     </div>
                 `;
@@ -654,70 +471,17 @@ export class ChatArea {
      * Show typing indicator
      */
     showTypingIndicator() {
-        // Remove any existing typing indicator first
-        this.hideTypingIndicator();
-        
-        const html = `
-            <div id="typingIndicator" class="flex animate-fade-in justify-start">
-                <div class="flex gap-1.5 py-2">
-                    <div class="w-2 h-2 bg-lamp-muted rounded-full typing-dot"></div>
-                    <div class="w-2 h-2 bg-lamp-muted rounded-full typing-dot"></div>
-                    <div class="w-2 h-2 bg-lamp-muted rounded-full typing-dot"></div>
-                </div>
-            </div>
-        `;
-        
-        this.elements.messagesContainer?.insertAdjacentHTML('beforeend', html);
-        scrollToBottom(this.elements.chatArea);
+        if (this._typingIndicator) {
+            this._typingIndicator.show();
+        }
     }
     
     /**
      * Hide typing indicator
      */
     hideTypingIndicator() {
-        $('typingIndicator')?.remove();
-    }
-    
-    /**
-     * Set prompt category
-     * @private
-     */
-    _setPromptCategory(category) {
-        const prompts = {
-            create: [
-                'Write a poem about technology',
-                'Create a short story about adventure',
-                'Design a logo concept for a coffee shop',
-                'Write a song about friendship',
-            ],
-            explore: [
-                'What are the latest trends in AI?',
-                'Explain the history of the internet',
-                'What causes northern lights?',
-                'How do black holes form?',
-            ],
-            code: [
-                'Write a Python function to sort a list',
-                'Create a React component for a button',
-                'Explain recursion with an example',
-                'How do I use async/await in JavaScript?',
-            ],
-            learn: [
-                'Teach me about machine learning',
-                'Explain quantum computing simply',
-                'What is blockchain technology?',
-                'How does the stock market work?',
-            ],
-        };
-        
-        const categoryPrompts = prompts[category] || prompts.explore;
-        
-        if (this.elements.suggestedPrompts) {
-            setHtml(this.elements.suggestedPrompts, categoryPrompts.map(p => `
-                <button data-prompt="${escapeHtml(p)}" class="prompt-btn w-full text-left py-3 px-4 text-lamp-muted hover:text-lamp-text border-l-2 border-transparent hover:border-lamp-accent hover:bg-lamp-input/30 rounded-r-lg transition-all duration-200">
-                    ${escapeHtml(p)}
-                </button>
-            `).join(''));
+        if (this._typingIndicator) {
+            this._typingIndicator.hide();
         }
     }
     

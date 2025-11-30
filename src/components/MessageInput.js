@@ -2,9 +2,9 @@
 // =======================
 
 import { stateManager } from '../services/state.js';
-import { $, setHtml } from '../utils/dom.js';
-import { fileToBase64, isImageFile, isPdfFile, formatFileSize, getFileType } from '../utils/files.js';
-import { MODELS, getModelById } from '../config/models.js';
+import { $ } from '../utils/dom.js';
+import { ModelSelector } from './input/ModelSelector.js';
+import { AttachmentManager } from './input/AttachmentManager.js';
 import { MAX_TEXTAREA_HEIGHT } from '../config/constants.js';
 
 /**
@@ -37,9 +37,11 @@ export class MessageInput {
             attachmentsArea: null,
         };
 
-        /** @type {Attachment[]} */
-        this._attachments = [];
         this._unsubscribers = [];
+        
+        // Sub-components
+        this._modelSelector = null;
+        this._attachmentManager = null;
     }
 
     /**
@@ -55,6 +57,7 @@ export class MessageInput {
 
         container.innerHTML = this._render();
         this._cacheElements();
+        this._initSubComponents();
         this._bindEvents();
         this._subscribeToState();
         this.refresh();
@@ -159,6 +162,29 @@ export class MessageInput {
     }
 
     /**
+     * Initialize sub-components
+     * @private
+     */
+    _initSubComponents() {
+        // Initialize model selector
+        this._modelSelector = new ModelSelector(
+            this.elements.modelButton,
+            this.elements.modelDropdown,
+            this.elements.modelList,
+            this.elements.modelSearch,
+            this.elements.selectedModelName
+        );
+        this._modelSelector.init();
+        
+        // Initialize attachment manager
+        this._attachmentManager = new AttachmentManager(
+            this.elements.attachmentsArea,
+            this.elements.fileInput
+        );
+        this._attachmentManager.init();
+    }
+
+    /**
      * Bind event handlers
      * @private
      */
@@ -181,23 +207,7 @@ export class MessageInput {
             }
         });
 
-        // Model dropdown toggle
-        this.elements.modelButton?.addEventListener('click', () => {
-            this._toggleModelDropdown();
-        });
-
-        // Model search
-        this.elements.modelSearch?.addEventListener('input', (e) => {
-            this._filterModels(e.target.value);
-        });
-
-        // Model selection (delegated)
-        this.elements.modelList?.addEventListener('click', (e) => {
-            const btn = e.target.closest('[data-model-id]');
-            if (btn) {
-                this._selectModel(btn.dataset.modelId);
-            }
-        });
+        // Model selector handles its own events
 
         // Web search toggle
         this.elements.webSearchBtn?.addEventListener('click', () => {
@@ -210,18 +220,14 @@ export class MessageInput {
         });
 
         // File input change handler
-        this.elements.fileInput?.addEventListener('change', (e) => {
-            this._handleFileSelect(e.target.files);
+        this.elements.fileInput?.addEventListener('change', async (e) => {
+            try {
+                await this._attachmentManager.handleFileSelect(e.target.files);
+            } catch (error) {
+                alert(error.message);
+            }
             // Reset input so same file can be selected again
             e.target.value = '';
-        });
-
-        // Attachment removal (delegated)
-        this.elements.attachmentsArea?.addEventListener('click', (e) => {
-            const removeBtn = e.target.closest('[data-remove-attachment]');
-            if (removeBtn) {
-                this._removeAttachment(removeBtn.dataset.removeAttachment);
-            }
         });
 
         // Close dropdown on outside click
@@ -245,139 +251,21 @@ export class MessageInput {
             this.elements.form.classList.remove('ring-2', 'ring-amber-500', 'ring-offset-2');
         });
 
-        this.elements.form?.addEventListener('drop', (e) => {
+        this.elements.form?.addEventListener('drop', async (e) => {
             e.preventDefault();
             e.stopPropagation();
             this.elements.form.classList.remove('ring-2', 'ring-amber-500', 'ring-offset-2');
             
             if (e.dataTransfer?.files?.length) {
-                this._handleFileSelect(e.dataTransfer.files);
+                try {
+                    await this._attachmentManager.handleFileSelect(e.dataTransfer.files);
+                } catch (error) {
+                    alert(error.message);
+                }
             }
         });
     }
 
-    /**
-     * Handle file selection
-     * @private
-     * @param {FileList} files
-     */
-    async _handleFileSelect(files) {
-        if (!files || files.length === 0) return;
-
-        for (const file of files) {
-            try {
-                // Validate and convert to base64
-                const dataUrl = await fileToBase64(file);
-                
-                // Create attachment object
-                const attachment = {
-                    id: `att_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    name: file.name,
-                    type: getFileType(file),
-                    mimeType: file.type,
-                    size: file.size,
-                    dataUrl: dataUrl,
-                };
-
-                this._attachments.push(attachment);
-            } catch (error) {
-                console.error('File processing error:', error);
-                alert(error.message);
-            }
-        }
-
-        this._renderAttachments();
-    }
-
-    /**
-     * Remove an attachment
-     * @private
-     * @param {string} attachmentId
-     */
-    _removeAttachment(attachmentId) {
-        this._attachments = this._attachments.filter(att => att.id !== attachmentId);
-        this._renderAttachments();
-    }
-
-    /**
-     * Render attachments preview
-     * @private
-     */
-    _renderAttachments() {
-        const attachmentsArea = this.elements.attachmentsArea;
-        const attachmentsList = $('attachmentsList');
-        
-        if (!attachmentsArea || !attachmentsList) return;
-
-        if (this._attachments.length === 0) {
-            attachmentsArea.classList.add('hidden');
-            attachmentsList.innerHTML = '';
-            return;
-        }
-
-        attachmentsArea.classList.remove('hidden');
-
-        let html = '';
-        for (const att of this._attachments) {
-            if (att.type === 'image') {
-                // Image thumbnail
-                html += `
-                    <div class="relative group">
-                        <div class="w-20 h-20 rounded-lg overflow-hidden border border-lamp-border bg-lamp-input">
-                            <img src="${att.dataUrl}" alt="${att.name}" class="w-full h-full object-cover">
-                        </div>
-                        <button type="button" data-remove-attachment="${att.id}" 
-                            class="absolute -top-2 -right-2 w-5 h-5 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-full text-xs shadow-md opacity-0 group-hover:opacity-100 transition-opacity">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                            </svg>
-                        </button>
-                        <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-1 py-0.5 truncate">
-                            ${this._truncateName(att.name, 12)}
-                        </div>
-                    </div>
-                `;
-            } else if (att.type === 'pdf') {
-                // PDF icon
-                html += `
-                    <div class="relative group">
-                        <div class="w-20 h-20 rounded-lg border border-lamp-border bg-lamp-input flex flex-col items-center justify-center gap-1">
-                            <svg class="w-8 h-8 text-red-500" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4zM8.5 13H7v4h1v-1.5h.5a1.5 1.5 0 000-3H8.5zm0 1.5v-1h.5a.5.5 0 010 1h-.5zm3-.5v3h1.5a1.5 1.5 0 001.5-1.5v0a1.5 1.5 0 00-1.5-1.5H11.5zm1 2.5v-2h.5a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-.5zm3-2.5h2v.5h-1.5v.75h1v.5h-1v1.25h-.5V14z"/>
-                            </svg>
-                            <span class="text-xs text-lamp-muted">${formatFileSize(att.size)}</span>
-                        </div>
-                        <button type="button" data-remove-attachment="${att.id}" 
-                            class="absolute -top-2 -right-2 w-5 h-5 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-full text-xs shadow-md opacity-0 group-hover:opacity-100 transition-opacity">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                            </svg>
-                        </button>
-                        <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-1 py-0.5 truncate text-center">
-                            ${this._truncateName(att.name, 12)}
-                        </div>
-                    </div>
-                `;
-            }
-        }
-
-        attachmentsList.innerHTML = html;
-    }
-
-    /**
-     * Truncate filename for display
-     * @private
-     * @param {string} name
-     * @param {number} maxLength
-     * @returns {string}
-     */
-    _truncateName(name, maxLength) {
-        if (name.length <= maxLength) return name;
-        const ext = name.split('.').pop();
-        const baseName = name.substring(0, name.length - ext.length - 1);
-        const truncatedBase = baseName.substring(0, maxLength - ext.length - 3);
-        return `${truncatedBase}...${ext}`;
-    }
 
     /**
      * Subscribe to state changes
@@ -396,9 +284,10 @@ export class MessageInput {
      * Refresh the input component
      */
     refresh() {
-        this._updateSelectedModel();
+        if (this._modelSelector) {
+            this._modelSelector.refresh();
+        }
         this._updateWebSearchButton();
-        this._renderModelList();
     }
 
     /**
@@ -419,7 +308,8 @@ export class MessageInput {
      */
     _handleSubmit() {
         const message = this.elements.textarea?.value.trim();
-        const hasAttachments = this._attachments.length > 0;
+        const attachments = this._attachmentManager ? this._attachmentManager.getAttachments() : [];
+        const hasAttachments = attachments.length > 0;
         
         // Allow sending if there's a message OR attachments
         if (!message && !hasAttachments) return;
@@ -427,7 +317,7 @@ export class MessageInput {
 
         if (this.onSubmit) {
             // Pass both message and attachments
-            this.onSubmit(message, [...this._attachments]);
+            this.onSubmit(message, [...attachments]);
         }
 
         // Clear input and attachments
@@ -435,16 +325,18 @@ export class MessageInput {
             this.elements.textarea.value = '';
             this.elements.textarea.style.height = 'auto';
         }
-        this._attachments = [];
-        this._renderAttachments();
+        if (this._attachmentManager) {
+            this._attachmentManager.clearAttachments();
+        }
     }
 
     /**
      * Clear all attachments
      */
     clearAttachments() {
-        this._attachments = [];
-        this._renderAttachments();
+        if (this._attachmentManager) {
+            this._attachmentManager.clearAttachments();
+        }
     }
 
     /**
@@ -452,130 +344,9 @@ export class MessageInput {
      * @returns {Attachment[]}
      */
     getAttachments() {
-        return [...this._attachments];
+        return this._attachmentManager ? this._attachmentManager.getAttachments() : [];
     }
 
-    /**
-     * Toggle model dropdown
-     * @private
-     */
-    _toggleModelDropdown() {
-        this.elements.modelDropdown?.classList.toggle('hidden');
-        if (!this.elements.modelDropdown?.classList.contains('hidden')) {
-            this.elements.modelSearch?.focus();
-        }
-    }
-
-    /**
-     * Render model list
-     * @private
-     */
-    _renderModelList() {
-        const settings = stateManager.settings;
-        // Default to all models enabled if enabledModels is undefined, null, empty, or contains no valid IDs
-        const enabledModelIds = settings?.enabledModels;
-        const validModelIds = MODELS.map(m => m.id);
-        const hasValidEnabled = enabledModelIds && enabledModelIds.length > 0 && 
-            enabledModelIds.some(id => validModelIds.includes(id));
-        const enabledModels = hasValidEnabled 
-            ? MODELS.filter(m => enabledModelIds.includes(m.id))
-            : MODELS; // Show all models by default
-        const selectedModel = settings?.selectedModel;
-
-        let html = '';
-        for (const model of enabledModels) {
-            const isSelected = model.id === selectedModel;
-            const hasImageCap = model.capabilities?.includes('image');
-            const hasVisionCap = model.capabilities?.includes('vision');
-            
-            html += `
-                <button type="button" data-model-id="${model.id}" 
-                    class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-lamp-input transition-colors ${isSelected ? 'bg-lamp-input' : ''}">
-                    <div class="flex-1">
-                        <div class="text-sm font-medium flex items-center gap-2">
-                            ${model.name}
-                            ${hasImageCap ? '<span class="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Image</span>' : ''}
-                            ${hasVisionCap ? '<span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Vision</span>' : ''}
-                        </div>
-                        <div class="text-xs text-lamp-muted">${model.provider}</div>
-                    </div>
-                    ${isSelected ? '<svg class="w-4 h-4 text-lamp-accent" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>' : ''}
-                </button>
-            `;
-        }
-
-        setHtml(this.elements.modelList, html || '<div class="px-3 py-4 text-center text-sm text-lamp-muted">No models available</div>');
-    }
-
-    /**
-     * Filter models by search query
-     * @private
-     */
-    _filterModels(query) {
-        const settings = stateManager.settings;
-        // Default to all models enabled if enabledModels is undefined, null, empty, or contains no valid IDs
-        const enabledModelIds = settings?.enabledModels;
-        const validModelIds = MODELS.map(m => m.id);
-        const hasValidEnabled = enabledModelIds && enabledModelIds.length > 0 && 
-            enabledModelIds.some(id => validModelIds.includes(id));
-        const enabledModels = hasValidEnabled 
-            ? MODELS.filter(m => enabledModelIds.includes(m.id))
-            : MODELS; // Show all models by default
-        const selectedModel = settings?.selectedModel;
-        const lowerQuery = query.toLowerCase();
-
-        const filtered = enabledModels.filter(m =>
-            m.name.toLowerCase().includes(lowerQuery) ||
-            m.provider.toLowerCase().includes(lowerQuery)
-        );
-
-        let html = '';
-        for (const model of filtered) {
-            const isSelected = model.id === selectedModel;
-            const hasImageCap = model.capabilities?.includes('image');
-            const hasVisionCap = model.capabilities?.includes('vision');
-            
-            html += `
-                <button type="button" data-model-id="${model.id}" 
-                    class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left hover:bg-lamp-input transition-colors ${isSelected ? 'bg-lamp-input' : ''}">
-                    <div class="flex-1">
-                        <div class="text-sm font-medium flex items-center gap-2">
-                            ${model.name}
-                            ${hasImageCap ? '<span class="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">Image</span>' : ''}
-                            ${hasVisionCap ? '<span class="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Vision</span>' : ''}
-                        </div>
-                        <div class="text-xs text-lamp-muted">${model.provider}</div>
-                    </div>
-                    ${isSelected ? '<svg class="w-4 h-4 text-lamp-accent" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>' : ''}
-                </button>
-            `;
-        }
-
-        setHtml(this.elements.modelList, html || '<div class="px-3 py-4 text-center text-sm text-lamp-muted">No models found</div>');
-    }
-
-    /**
-     * Select a model
-     * @private
-     */
-    async _selectModel(modelId) {
-        await stateManager.updateSettings({ selectedModel: modelId });
-        this._updateSelectedModel();
-        this._renderModelList();
-        this.elements.modelDropdown?.classList.add('hidden');
-    }
-
-    /**
-     * Update selected model display
-     * @private
-     */
-    _updateSelectedModel() {
-        const settings = stateManager.settings;
-        const model = getModelById(settings?.selectedModel);
-        if (this.elements.selectedModelName) {
-            this.elements.selectedModelName.textContent = model?.name || 'Select Model';
-        }
-    }
 
     /**
      * Toggle web search
