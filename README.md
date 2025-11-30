@@ -7,15 +7,19 @@ A modern, lightweight AI chat application inspired by [T3 Chat](https://t3.chat)
 ## ✨ Features
 
 - **T3-Inspired Design** — Clean, minimal interface closely matching T3 Chat's aesthetic
-- **Full-Page Settings** — T3-style settings with user profile sidebar and keyboard shortcuts
-- **Multi-Model Support** — Access 15+ AI models via OpenRouter (GPT-4, Claude, Gemini, Llama, and more)
-- **Real-time Streaming** — Watch responses appear token-by-token
+- **Clean Message UI** — No cluttered icons or borders, just clean flowing text
+- **Response Actions** — Copy and regenerate buttons on hover for assistant messages
+- **Streaming Stats** — View model name, tokens/sec, token count, and time-to-first-token on hover
+- **Full-Page Settings** — T3-style settings with user profile sidebar and tabbed navigation
+- **Multi-Model Support** — Access 15+ AI models via OpenRouter (GPT-5, Claude, Gemini, Grok, and more)
+- **Real-time Streaming** — Optimized streaming with no screen flicker
 - **Markdown Rendering** — Full markdown support with syntax-highlighted code blocks
-- **Chat History** — Persistent conversations with search and organization
-- **Model Switching** — Change models mid-conversation
+- **Chat History** — Persistent conversations with search and date grouping
+- **Model Switching** — Change models mid-conversation with searchable dropdown
 - **Floating Input Bar** — Modern floating input with shadow and attach button
 - **Clean Light Theme** — Elegant cream/white design with black/amber accents
-- **Collapsible Sidebar** — Toggle sidebar visibility on any screen size
+- **Collapsible Sidebar** — Smooth animated sidebar that properly collapses
+- **Custom Dialogs** — In-app confirmation modals (no browser popups)
 - **Responsive Design** — Works on desktop and mobile
 - **Privacy-First** — Your API key stays in your browser
 
@@ -68,6 +72,7 @@ lampchat/
 ├── index.html                  # Entry point (minimal HTML shell)
 ├── main.js                     # Application bootstrap
 ├── README.md
+├── STATUS.md                   # Detailed project status
 ├── .gitignore
 │
 └── src/
@@ -82,19 +87,19 @@ lampchat/
     │   └── index.js            # Factory (swap implementations here)
     │
     ├── services/               # Business Logic
-    │   ├── openrouter.js       # OpenRouter API client
+    │   ├── openrouter.js       # OpenRouter API client with streaming stats
     │   ├── state.js            # State management (pub/sub)
     │   └── index.js
     │
     ├── components/             # UI Components
     │   ├── Sidebar.js          # Navigation & chat list
-    │   ├── ChatArea.js         # Message display
+    │   ├── ChatArea.js         # Message display with hover actions
     │   ├── MessageInput.js     # Input & model selector
     │   ├── Settings.js         # Full-page settings (T3-style)
     │   └── index.js
     │
     ├── utils/                  # Utilities
-    │   ├── dom.js              # DOM helpers
+    │   ├── dom.js              # DOM helpers + custom confirm dialog
     │   ├── markdown.js         # Markdown rendering
     │   ├── date.js             # Date formatting
     │   └── index.js
@@ -119,29 +124,6 @@ const REPOSITORY_TYPE = 'localStorage';
 const REPOSITORY_TYPE = 'neon';
 ```
 
-**To migrate to Neon Database:**
-
-1. Create `src/repositories/NeonRepository.js`:
-
-```javascript
-import { BaseRepository } from './BaseRepository.js';
-
-export class NeonRepository extends BaseRepository {
-    constructor(connectionString) {
-        super();
-        // Initialize Neon client
-    }
-    
-    async getChats(userId) {
-        // SQL: SELECT * FROM chats WHERE user_id = $1
-    }
-    
-    // Implement remaining methods...
-}
-```
-
-2. Update the factory in `src/repositories/index.js`
-
 ### State Management
 
 Centralized state with reactive updates:
@@ -155,7 +137,7 @@ const unsubscribe = stateManager.subscribe('chatUpdated', (state, chat) => {
 });
 
 // Modify state
-await stateManager.updateSettings({ selectedModel: 'anthropic/claude-3.5-sonnet' });
+await stateManager.updateSettings({ selectedModel: 'anthropic/claude-opus-4.5' });
 
 // Cleanup
 unsubscribe();
@@ -193,7 +175,6 @@ Edit `src/config/models.js`:
 
 ```javascript
 export const MODELS = [
-    // Add your model
     {
         id: 'provider/model-name',
         name: 'Display Name',
@@ -231,12 +212,6 @@ export default {
 }
 ```
 
-### Adding a New Component
-
-1. Create `src/components/MyComponent.js`
-2. Export from `src/components/index.js`
-3. Initialize in `main.js`
-
 ## 🔧 Tech Stack
 
 | Technology | Purpose |
@@ -250,8 +225,6 @@ export default {
 | **OpenRouter** | AI model access |
 
 ## 📦 Dependencies
-
-Installed via npm:
 
 **Dev Dependencies:**
 
@@ -280,13 +253,13 @@ Installed via npm:
 
 - [ ] Dark mode toggle
 - [ ] Chat export (JSON, Markdown)
-- [ ] Image attachments (UI ready with Attach button)
+- [ ] Image attachments (Attach button UI ready)
 - [ ] System prompts / personas
+- [ ] Stop generation button
+- [ ] Chat renaming
 - [ ] Neon PostgreSQL integration
 - [ ] User authentication
 - [ ] Chat sharing
-- [ ] Stop generation button
-- [ ] Chat renaming
 
 ## 🤝 Contributing
 

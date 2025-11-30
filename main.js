@@ -7,6 +7,7 @@ import './src/style.css';
 import { stateManager, getOpenRouterService } from './src/services/index.js';
 import { Sidebar, ChatArea, MessageInput, Settings } from './src/components/index.js';
 import { configureMarked } from './src/utils/markdown.js';
+import { showConfirm } from './src/utils/dom.js';
 
 /**
  * Main application class
@@ -99,6 +100,7 @@ class LampChat {
         this.chatArea.setHandlers({
             onSettingsClick: () => this.settings.open(),
             onPromptSelect: (prompt) => this._usePrompt(prompt),
+            onRegenerate: (messageId) => this._regenerateResponse(messageId),
         });
 
         // Message input handlers
@@ -128,7 +130,13 @@ class LampChat {
      * @private
      */
     async _deleteChat(chatId) {
-        if (confirm('Delete this chat?')) {
+        const confirmed = await showConfirm('Are you sure you want to delete this chat?', {
+            title: 'Delete Chat',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            danger: true,
+        });
+        if (confirmed) {
             await stateManager.deleteChat(chatId);
         }
     }
@@ -149,6 +157,82 @@ class LampChat {
     _usePrompt(prompt) {
         this.messageInput.setValue(prompt);
         this.messageInput.focus();
+    }
+
+    /**
+     * Regenerate a response
+     * @private
+     */
+    async _regenerateResponse(messageId) {
+        if (stateManager.isStreaming) return;
+        
+        const chat = stateManager.currentChat;
+        if (!chat) return;
+        
+        // Find the message index
+        const msgIndex = chat.messages.findIndex(m => m.id === messageId);
+        if (msgIndex === -1) return;
+        
+        // Get messages up to (but not including) this assistant message
+        const messagesForContext = chat.messages.slice(0, msgIndex).map(m => ({
+            role: m.role,
+            content: m.content,
+        }));
+        
+        if (messagesForContext.length === 0) return;
+        
+        try {
+            // Show typing indicator
+            this.chatArea.showTypingIndicator();
+            stateManager.setStreaming(true);
+            
+            // Clear the existing message content
+            await stateManager.updateMessage(messageId, { content: '', stats: null });
+            
+            let streamedContent = '';
+            const settings = stateManager.settings;
+            
+            await this.openRouter.chatStream(
+                settings.selectedModel,
+                messagesForContext,
+                {
+                    onToken: async (token) => {
+                        streamedContent += token;
+                        await stateManager.updateMessage(messageId, {
+                            content: streamedContent,
+                        });
+                    },
+                    onComplete: async (fullContent, stats) => {
+                        this.chatArea.hideTypingIndicator();
+                        stateManager.setStreaming(false);
+                        
+                        await stateManager.updateMessage(messageId, {
+                            content: fullContent,
+                            stats: {
+                                model: settings.selectedModel,
+                                completionTokens: stats.completionTokens,
+                                promptTokens: stats.promptTokens,
+                                tokensPerSecond: stats.tokensPerSecond,
+                                timeToFirstToken: stats.timeToFirstToken,
+                            },
+                        });
+                    },
+                    onError: async (error) => {
+                        console.error('Regenerate error:', error);
+                        this.chatArea.hideTypingIndicator();
+                        stateManager.setStreaming(false);
+                        
+                        await stateManager.updateMessage(messageId, {
+                            content: `Error: ${error.message}`,
+                        });
+                    },
+                }
+            );
+        } catch (error) {
+            console.error('Regenerate error:', error);
+            this.chatArea.hideTypingIndicator();
+            stateManager.setStreaming(false);
+        }
     }
 
     /**
@@ -191,21 +275,36 @@ class LampChat {
 
             // Stream response
             const settings = stateManager.settings;
+            
+            // Use local accumulator to avoid race condition with state updates
+            let streamedContent = '';
 
             await this.openRouter.chatStream(
                 settings.selectedModel,
                 messages,
                 {
                     onToken: async (token) => {
-                        // Update message content
-                        const currentContent = stateManager.currentChat.messages[stateManager.currentChat.messages.length - 1].content;
+                        // Accumulate locally to avoid race condition
+                        streamedContent += token;
                         await stateManager.updateMessage(assistantMsg.id, {
-                            content: currentContent + token,
+                            content: streamedContent,
                         });
                     },
-                    onComplete: (fullContent) => {
+                    onComplete: async (fullContent, stats) => {
                         this.chatArea.hideTypingIndicator();
                         stateManager.setStreaming(false);
+                        
+                        // Save stats with the message
+                        await stateManager.updateMessage(assistantMsg.id, {
+                            content: fullContent,
+                            stats: {
+                                model: settings.selectedModel,
+                                completionTokens: stats.completionTokens,
+                                promptTokens: stats.promptTokens,
+                                tokensPerSecond: stats.tokensPerSecond,
+                                timeToFirstToken: stats.timeToFirstToken,
+                            },
+                        });
                     },
                     onError: async (error) => {
                         console.error('Stream error:', error);

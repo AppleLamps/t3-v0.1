@@ -46,15 +46,10 @@ export class Sidebar {
      */
     _render() {
         return `
-            <aside id="sidebar" class="w-64 h-full bg-lamp-sidebar border-r border-lamp-border flex flex-col sidebar-transition">
+            <aside id="sidebar" class="w-64 h-full bg-lamp-sidebar border-r border-lamp-border flex flex-col transition-all duration-300 ease-in-out overflow-hidden">
                 <!-- Logo & New Chat - Fixed Top -->
                 <div class="flex-shrink-0 p-3 pb-2">
                     <div class="flex items-center gap-2 mb-3">
-                        <button id="sidebarToggleBtn" class="p-2 hover:bg-lamp-card rounded-lg transition-colors" title="Toggle Sidebar">
-                            <svg class="w-5 h-5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-                            </svg>
-                        </button>
                         <span class="text-base font-semibold tracking-tight text-lamp-text">${APP_NAME}</span>
                     </div>
                     <button id="newChatBtn" class="w-full bg-lamp-accent hover:bg-lamp-hover text-white py-2.5 px-4 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
@@ -110,7 +105,6 @@ export class Sidebar {
         this.elements.userProfile = $('userProfileBtn');
         this.elements.userName = $('sidebarUserName');
         this.elements.userInitial = $('sidebarUserInitial');
-        this.elements.toggleBtn = $('sidebarToggleBtn');
     }
     
     /**
@@ -118,11 +112,6 @@ export class Sidebar {
      * @private
      */
     _bindEvents() {
-        // Sidebar toggle button
-        this.elements.toggleBtn?.addEventListener('click', () => {
-            stateManager.toggleSidebar();
-        });
-        
         // New chat button
         this.elements.newChatBtn?.addEventListener('click', () => {
             this._onNewChat();
@@ -242,7 +231,13 @@ export class Sidebar {
      */
     _toggleVisibility(open) {
         if (this.elements.sidebar) {
-            this.elements.sidebar.classList.toggle('-translate-x-full', !open);
+            if (open) {
+                this.elements.sidebar.classList.remove('w-0', 'border-r-0');
+                this.elements.sidebar.classList.add('w-64');
+            } else {
+                this.elements.sidebar.classList.remove('w-64');
+                this.elements.sidebar.classList.add('w-0', 'border-r-0');
+            }
         }
     }
     

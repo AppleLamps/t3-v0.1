@@ -11,9 +11,19 @@ import { OPENROUTER_API_URL, APP_NAME } from '../config/constants.js';
  */
 
 /**
+ * @typedef {Object} StreamStats
+ * @property {number} completionTokens - Number of completion tokens
+ * @property {number} promptTokens - Number of prompt tokens  
+ * @property {number} totalTokens - Total tokens used
+ * @property {number} timeToFirstToken - Time to first token in seconds
+ * @property {number} tokensPerSecond - Tokens per second
+ * @property {number} totalTime - Total generation time in seconds
+ */
+
+/**
  * @typedef {Object} StreamCallbacks
  * @property {function(string): void} onToken - Called for each token
- * @property {function(string): void} onComplete - Called when stream completes
+ * @property {function(string, StreamStats): void} onComplete - Called when stream completes with stats
  * @property {function(Error): void} onError - Called on error
  */
 
@@ -105,6 +115,12 @@ export class OpenRouterService {
             return;
         }
         
+        // Timing tracking
+        const startTime = performance.now();
+        let firstTokenTime = null;
+        let tokenCount = 0;
+        let usageStats = null;
+        
         try {
             const response = await fetch(this.baseUrl, {
                 method: 'POST',
@@ -113,6 +129,7 @@ export class OpenRouterService {
                     model,
                     messages,
                     stream: true,
+                    usage: { include: true },
                     ...options,
                 }),
             });
@@ -140,8 +157,19 @@ export class OpenRouterService {
                         
                         try {
                             const parsed = JSON.parse(data);
+                            
+                            // Check for usage stats (comes in final chunk)
+                            if (parsed.usage) {
+                                usageStats = parsed.usage;
+                            }
+                            
                             const content = parsed.choices?.[0]?.delta?.content || '';
                             if (content) {
+                                // Track first token time
+                                if (firstTokenTime === null) {
+                                    firstTokenTime = performance.now();
+                                }
+                                tokenCount++;
                                 fullContent += content;
                                 callbacks.onToken(content);
                             }
@@ -152,7 +180,22 @@ export class OpenRouterService {
                 }
             }
             
-            callbacks.onComplete(fullContent);
+            const endTime = performance.now();
+            const totalTimeMs = endTime - startTime;
+            const timeToFirstMs = firstTokenTime ? firstTokenTime - startTime : totalTimeMs;
+            const generationTimeMs = firstTokenTime ? endTime - firstTokenTime : totalTimeMs;
+            
+            // Build stats object
+            const stats = {
+                completionTokens: usageStats?.completion_tokens || tokenCount,
+                promptTokens: usageStats?.prompt_tokens || 0,
+                totalTokens: usageStats?.total_tokens || tokenCount,
+                timeToFirstToken: timeToFirstMs / 1000,
+                tokensPerSecond: generationTimeMs > 0 ? ((usageStats?.completion_tokens || tokenCount) / (generationTimeMs / 1000)) : 0,
+                totalTime: totalTimeMs / 1000,
+            };
+            
+            callbacks.onComplete(fullContent, stats);
             
         } catch (error) {
             callbacks.onError(error);

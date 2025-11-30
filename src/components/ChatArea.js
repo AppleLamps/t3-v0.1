@@ -4,6 +4,7 @@
 import { stateManager } from '../services/state.js';
 import { $, escapeHtml, setHtml, scrollToBottom } from '../utils/dom.js';
 import { renderMarkdown, processMessageContent } from '../utils/markdown.js';
+import { getModelById } from '../config/models.js';
 
 /**
  * Chat area component - displays messages and welcome screen
@@ -19,6 +20,8 @@ export class ChatArea {
         };
         
         this._unsubscribers = [];
+        this._streamingMessageId = null;
+        this._streamingElement = null;
     }
     
     /**
@@ -181,6 +184,45 @@ export class ChatArea {
                 this.onPromptSelect(btn.dataset.prompt);
             }
         });
+        
+        // Message actions (delegated)
+        this.elements.messagesContainer?.addEventListener('click', (e) => {
+            const copyBtn = e.target.closest('[data-copy-msg]');
+            const regenBtn = e.target.closest('[data-regen-msg]');
+            
+            if (copyBtn) {
+                this._copyMessage(copyBtn.dataset.copyMsg);
+            } else if (regenBtn) {
+                if (this.onRegenerate) {
+                    this.onRegenerate(regenBtn.dataset.regenMsg);
+                }
+            }
+        });
+    }
+    
+    /**
+     * Copy message content to clipboard
+     * @private
+     */
+    async _copyMessage(messageId) {
+        const chat = stateManager.currentChat;
+        if (!chat) return;
+        
+        const msg = chat.messages.find(m => m.id === messageId);
+        if (!msg) return;
+        
+        try {
+            await navigator.clipboard.writeText(msg.content);
+            // Show brief feedback
+            const btn = document.querySelector(`[data-copy-msg="${messageId}"]`);
+            if (btn) {
+                const originalHTML = btn.innerHTML;
+                btn.innerHTML = `<svg class="w-3.5 h-3.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>`;
+                setTimeout(() => { btn.innerHTML = originalHTML; }, 1500);
+            }
+        } catch (err) {
+            console.error('Copy failed:', err);
+        }
     }
     
     /**
@@ -190,10 +232,80 @@ export class ChatArea {
     _subscribeToState() {
         this._unsubscribers.push(
             stateManager.subscribe('currentChatChanged', () => this.refresh()),
-            stateManager.subscribe('messageAdded', () => this.renderMessages()),
-            stateManager.subscribe('messageUpdated', () => this.renderMessages()),
+            stateManager.subscribe('messageAdded', (state, data) => this._onMessageAdded(data)),
+            stateManager.subscribe('messageUpdated', (state, data) => this._onMessageUpdated(data)),
             stateManager.subscribe('userUpdated', () => this._updateWelcomeName()),
+            stateManager.subscribe('streamingChanged', (state, isStreaming) => {
+                if (!isStreaming) {
+                    // Streaming ended - do a full re-render to show stats
+                    this._streamingMessageId = null;
+                    this._streamingElement = null;
+                    this.renderMessages();
+                }
+            }),
         );
+    }
+    
+    /**
+     * Handle message added
+     * @private
+     */
+    _onMessageAdded(data) {
+        const msg = data?.message;
+        if (msg?.role === 'assistant' && stateManager.isStreaming) {
+            // New assistant message during streaming - append it and track for updates
+            this._streamingMessageId = msg.id;
+            this._appendStreamingMessage(msg);
+        } else {
+            // Regular message add - full render
+            this.renderMessages();
+        }
+    }
+    
+    /**
+     * Handle message updated  
+     * @private
+     */
+    _onMessageUpdated(data) {
+        const msg = data?.message;
+        if (this._streamingMessageId && msg?.id === this._streamingMessageId && this._streamingElement) {
+            // Streaming update - just update the content, don't re-render everything
+            this._updateStreamingContent(msg.content);
+        } else if (!stateManager.isStreaming) {
+            // Not streaming - do full render
+            this.renderMessages();
+        }
+    }
+    
+    /**
+     * Append a new streaming message element
+     * @private
+     */
+    _appendStreamingMessage(msg) {
+        // Hide typing indicator when streaming starts
+        this.hideTypingIndicator();
+        
+        const html = `
+            <div id="streaming-msg" class="group flex flex-col animate-fade-in">
+                <div class="max-w-[80%]">
+                    <div class="message-content prose prose-sm max-w-none text-lamp-text"></div>
+                </div>
+            </div>
+        `;
+        this.elements.messagesContainer?.insertAdjacentHTML('beforeend', html);
+        this._streamingElement = document.querySelector('#streaming-msg .message-content');
+        scrollToBottom(this.elements.chatArea);
+    }
+    
+    /**
+     * Update streaming message content efficiently
+     * @private
+     */
+    _updateStreamingContent(content) {
+        if (this._streamingElement && content) {
+            this._streamingElement.innerHTML = renderMarkdown(content);
+            scrollToBottom(this.elements.chatArea);
+        }
     }
     
     /**
@@ -249,30 +361,54 @@ export class ChatArea {
         if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
         if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
         
-        const userInitial = (user?.name || 'U').charAt(0).toUpperCase();
-        
         let html = '';
         for (const msg of chat.messages) {
             const isUser = msg.role === 'user';
-            html += `
-                <div class="flex gap-4 animate-fade-in ${isUser ? 'justify-end' : ''}">
-                    ${!isUser ? `
-                        <div class="w-8 h-8 rounded-lg bg-lamp-accent flex items-center justify-center flex-shrink-0">
-                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-                            </svg>
+            
+            if (isUser) {
+                html += `
+                    <div class="flex animate-fade-in justify-end">
+                        <div class="bg-lamp-accent text-white rounded-2xl px-4 py-2.5 max-w-[80%]">
+                            <div class="message-content">${escapeHtml(msg.content)}</div>
                         </div>
-                    ` : ''}
-                    <div class="${isUser ? 'bg-lamp-accent text-white' : 'bg-lamp-card border border-lamp-border'} rounded-2xl px-4 py-3 max-w-[80%]">
-                        <div class="message-content ${isUser ? '' : 'prose prose-sm max-w-none'}">${isUser ? escapeHtml(msg.content) : renderMarkdown(msg.content)}</div>
                     </div>
-                    ${isUser ? `
-                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center flex-shrink-0 text-white text-sm font-medium">
-                            ${userInitial}
+                `;
+            } else {
+                // Assistant message with hover actions
+                const stats = msg.stats;
+                const modelName = stats?.model ? (getModelById(stats.model)?.name || stats.model.split('/').pop()) : '';
+                const tokPerSec = stats?.tokensPerSecond ? stats.tokensPerSecond.toFixed(2) : '';
+                const tokens = stats?.completionTokens || '';
+                const ttft = stats?.timeToFirstToken ? stats.timeToFirstToken.toFixed(2) : '';
+                
+                html += `
+                    <div class="group flex flex-col animate-fade-in">
+                        <div class="max-w-[80%]">
+                            <div class="message-content prose prose-sm max-w-none text-lamp-text">${renderMarkdown(msg.content)}</div>
                         </div>
-                    ` : ''}
-                </div>
-            `;
+                        <div class="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                            <button data-copy-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Copy">
+                                <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                </svg>
+                            </button>
+                            <button data-regen-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Regenerate">
+                                <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                            </button>
+                            ${stats ? `
+                                <div class="flex items-center gap-4 text-xs text-lamp-muted">
+                                    ${modelName ? `<span>${modelName}</span>` : ''}
+                                    ${tokPerSec ? `<span class="flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>${tokPerSec} tok/sec</span>` : ''}
+                                    ${tokens ? `<span class="flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>${tokens} tokens</span>` : ''}
+                                    ${ttft ? `<span class="flex items-center gap-1"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Time-to-First: ${ttft} sec</span>` : ''}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }
         }
         
         setHtml(this.elements.messagesContainer, html);
@@ -288,19 +424,15 @@ export class ChatArea {
      * Show typing indicator
      */
     showTypingIndicator() {
+        // Remove any existing typing indicator first
+        this.hideTypingIndicator();
+        
         const html = `
-            <div id="typingIndicator" class="flex gap-4 animate-fade-in">
-                <div class="w-8 h-8 rounded-lg bg-lamp-accent flex items-center justify-center flex-shrink-0">
-                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
-                    </svg>
-                </div>
-                <div class="bg-lamp-card border border-lamp-border rounded-2xl px-4 py-3">
-                    <div class="flex gap-1">
-                        <div class="w-2 h-2 bg-lamp-muted rounded-full typing-dot"></div>
-                        <div class="w-2 h-2 bg-lamp-muted rounded-full typing-dot"></div>
-                        <div class="w-2 h-2 bg-lamp-muted rounded-full typing-dot"></div>
-                    </div>
+            <div id="typingIndicator" class="flex animate-fade-in justify-start">
+                <div class="flex gap-1.5 py-2">
+                    <div class="w-2 h-2 bg-lamp-muted rounded-full typing-dot"></div>
+                    <div class="w-2 h-2 bg-lamp-muted rounded-full typing-dot"></div>
+                    <div class="w-2 h-2 bg-lamp-muted rounded-full typing-dot"></div>
                 </div>
             </div>
         `;
@@ -366,6 +498,7 @@ export class ChatArea {
     setHandlers(handlers) {
         this.onSettingsClick = handlers.onSettingsClick;
         this.onPromptSelect = handlers.onPromptSelect;
+        this.onRegenerate = handlers.onRegenerate;
     }
     
     /**

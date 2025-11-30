@@ -1,6 +1,6 @@
 # 📋 LampChat - Project Status
 
-> Last Updated: November 29, 2025
+> Last Updated: November 30, 2025
 
 ## 🎯 Project Overview
 
@@ -28,23 +28,27 @@
 ### UI Components
 
 - [x] **Sidebar** (T3-style)
-  - Hamburger toggle button for collapsible sidebar
-  - "LampChat" branding next to toggle
+  - Animated collapse (0 width when closed, proper layout reflow)
+  - "LampChat" branding
   - "New Chat" button with rounded corners
   - Minimal search bar (borderless)
   - Chat history grouped by date (Today, Yesterday, Previous 7 Days, Older)
   - Clean thread list with subtle hover states
-  - Delete chat functionality
+  - Delete chat with custom in-app confirmation
   - User profile fixed at bottom with avatar, name, and settings access
 
 - [x] **Chat Area** (T3-style)
   - Welcome screen with centered "How can I help you?" heading
-  - Header hidden in empty state (T3-style)
-  - Floating settings icon in top-right corner
+  - Header with sidebar toggle (hidden in empty state)
+  - Floating settings icon in top-right corner (empty state)
   - Quick action pills (Create, Explore, Code, Learn) with subtle fill
   - Suggested prompts as simple text with left accent on hover
-  - Message display with user/assistant differentiation
-  - Typing indicator during streaming
+  - **Clean message display** — No icons/avatars, no bordered containers
+  - User messages in black pill bubbles, assistant messages as plain text
+  - **Hover actions** on assistant messages: Copy, Regenerate
+  - **Streaming stats** on hover: Model name, tokens/sec, token count, time-to-first-token
+  - Optimized streaming (no screen flicker, targeted DOM updates)
+  - Typing indicator (hides when first token arrives)
 
 - [x] **Message Input** (T3-style)
   - Floating card design with shadow
@@ -63,20 +67,28 @@
   - Customization: Theme toggles (coming soon)
   - API Keys: OpenRouter key with show/hide toggle, security notice
   - Models: Default model selector, available models with checkboxes
-  - Data: Export/import chats, delete all data
+  - Data: Export/import chats, delete all data with custom confirmation
   - Toast notifications on save
+
+- [x] **Custom Confirmation Dialogs**
+  - In-app modal instead of browser `confirm()`
+  - Styled to match app theme
+  - Danger mode (red button) for destructive actions
+  - Click outside or Escape to cancel
 
 ### Backend Services
 
 - [x] **OpenRouter API Integration**
   - Streaming responses (token-by-token)
+  - **Usage accounting** — Fetches token stats from API
+  - **Timing stats** — Calculates time-to-first-token, tokens/sec
   - Non-streaming fallback
   - Error handling
   - Connection testing
 
 - [x] **Local Storage Repository**
   - Full CRUD for chats
-  - Message management
+  - Message management with stats storage
   - User preferences
   - Settings persistence
   - Data export/import
@@ -84,7 +96,7 @@
 ### Styling & UX
 
 - [x] T3-inspired light theme with black/amber accents
-- [x] Collapsible sidebar (works on all screen sizes)
+- [x] Animated collapsible sidebar (proper width collapse)
 - [x] Floating input bar with shadow
 - [x] Context-aware header (hidden in empty state)
 - [x] Smooth animations (fade-in messages, typing dots)
@@ -92,30 +104,14 @@
 - [x] Markdown rendering with syntax highlighting
 - [x] Code block copy buttons
 - [x] Responsive design
+- [x] No screen flicker during streaming
 
 ### Documentation
 
 - [x] Comprehensive README.md
+- [x] Detailed STATUS.md
 - [x] MIT License
 - [x] .gitignore for common files
-
-### Recent Updates (T3 Redesign - Nov 30, 2024)
-
-- [x] **Sidebar redesign** — Added toggle button, narrower width (264px), cleaner styling
-- [x] **Header visibility** — Hidden in empty state, floating settings icon instead
-- [x] **Welcome screen** — Centered layout, T3-style category pills, simple text prompts
-- [x] **Input bar** — Floating card with shadow, attach button, circular send button
-
-### Vite Migration (Nov 29, 2025)
-
-- [x] **Vite build system** — Replaced CDN dependencies with npm packages
-- [x] **Tailwind CSS** — Proper PostCSS integration with `tailwind.config.js`
-- [x] **NPM packages** — `marked` and `highlight.js` now imported as ES modules
-- [x] **Vercel-ready** — Build output to `dist/` directory for easy deployment
-- [x] **Dev server** — Fast HMR with `npm run dev`
-- [x] **Visual polish** — Subtle scrollbars, better transitions, cohesive spacing
-- [x] **Settings page redesign** — Full-page T3-style with user profile sidebar, keyboard shortcuts, tabbed navigation
-- [x] **Model dropdown z-index fix** — Dropdown now appears above input bar correctly
 
 ---
 
@@ -150,9 +146,6 @@
 
 - [ ] **Keyboard shortcuts** (Ctrl+K search, Ctrl+N new chat, etc.)
 - [ ] **Message editing** - Edit sent messages
-- [ ] **Message regeneration** - Regenerate last response
-- [ ] **Token counting** - Show token usage per message
-- [ ] **Cost tracking** - Track API spending
 - [ ] **Chat folders** - Organize chats into folders
 - [ ] **Pinned chats** - Pin important conversations
 - [ ] **Chat export** - Export as Markdown, PDF
@@ -177,19 +170,19 @@ src/
 │   └── index.js                # Factory pattern for swapping
 │
 ├── services/         # Business Logic
-│   ├── openrouter.js # API client with streaming
+│   ├── openrouter.js # API client with streaming + stats
 │   ├── state.js      # Centralized state + pub/sub
 │   └── index.js
 │
 ├── components/       # UI Components
 │   ├── Sidebar.js    # Navigation, chat list
-│   ├── ChatArea.js   # Messages, welcome screen
+│   ├── ChatArea.js   # Messages, hover actions, streaming
 │   ├── MessageInput.js # Input, model selector
-│   ├── Settings.js   # Modal with tabs
+│   ├── Settings.js   # Full-page settings
 │   └── index.js
 │
 ├── utils/            # Utilities
-│   ├── dom.js        # DOM manipulation helpers
+│   ├── dom.js        # DOM helpers + showConfirm()
 │   ├── markdown.js   # Markdown + code highlighting
 │   ├── date.js       # Date formatting/grouping
 │   └── index.js
@@ -223,6 +216,8 @@ src/
        onSelectChat: (id) => stateManager.selectChat(id),
    });
    ```
+
+4. **Optimized Streaming**: During streaming, only the active message element is updated (no full DOM rebuild).
 
 ---
 
@@ -277,13 +272,13 @@ npm run preview
 | `src/config/models.js` | AI model definitions (easy to add new) |
 | `src/repositories/BaseRepository.js` | Data access interface |
 | `src/repositories/LocalStorageRepository.js` | localStorage implementation |
-| `src/services/openrouter.js` | OpenRouter API client |
+| `src/services/openrouter.js` | OpenRouter API client with streaming stats |
 | `src/services/state.js` | Global state management |
 | `src/components/Sidebar.js` | Left sidebar UI |
-| `src/components/ChatArea.js` | Main chat display |
+| `src/components/ChatArea.js` | Chat display with hover actions |
 | `src/components/MessageInput.js` | Message input + model selector |
 | `src/components/Settings.js` | Full-page settings (T3-style) |
-| `src/utils/dom.js` | DOM helper functions |
+| `src/utils/dom.js` | DOM helpers + showConfirm() |
 | `src/utils/markdown.js` | Markdown rendering |
 | `src/utils/date.js` | Date grouping utilities |
 | `src/styles/main.css` | Custom CSS (scrollbars, animations) |
@@ -351,11 +346,10 @@ function createRepository() {
 
 ## 🐛 Known Issues
 
-1. **Model dropdown stays open** - Clicking outside sometimes doesn't close it
-2. **No loading state** - Initial app load doesn't show loading indicator
-3. **Mobile sidebar** - Needs overlay backdrop when open on mobile
-4. **Attach button** - UI only, file upload not yet implemented
-5. **Settings page** - Dark mode toggle is placeholder only (coming soon)
+1. **No loading state** - Initial app load doesn't show loading indicator
+2. **Mobile sidebar** - Needs overlay backdrop when open on mobile
+3. **Attach button** - UI only, file upload not yet implemented
+4. **Settings page** - Dark mode toggle is placeholder only (coming soon)
 
 ---
 

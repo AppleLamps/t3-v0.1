@@ -12,121 +12,121 @@
 
 /** @type {Model[]} */
 export const MODELS = [
-    // OpenAI
-    { 
-        id: 'openai/gpt-4o', 
-        name: 'GPT-4o', 
-        provider: 'OpenAI', 
-        capabilities: ['vision', 'tools'],
-        description: 'Most capable GPT-4 model with vision'
+    // OpenAI - Chat
+    {
+        id: 'openai/gpt-5.1',
+        name: 'GPT-5.1',
+        provider: 'OpenAI',
+        capabilities: ['vision', 'tools', 'chat'],
+        description: 'Next-generation multimodal chat model from OpenAI (high-capacity, vision + tools)'
     },
-    { 
-        id: 'openai/gpt-4o-mini', 
-        name: 'GPT-4o Mini', 
-        provider: 'OpenAI', 
-        capabilities: ['vision', 'tools'],
-        description: 'Smaller, faster, cheaper GPT-4o'
+    {
+        id: 'openai/gpt-5.1-chat',
+        name: 'GPT-5.1 Chat',
+        provider: 'OpenAI',
+        capabilities: ['vision', 'chat'],
+        description: 'Chat-optimized variant of GPT-5.1 for conversational use-cases'
     },
-    { 
-        id: 'openai/gpt-4-turbo', 
-        name: 'GPT-4 Turbo', 
-        provider: 'OpenAI', 
-        capabilities: ['vision', 'tools'],
-        description: 'GPT-4 Turbo with vision'
+
+    // xAI
+    {
+        id: 'x-ai/grok-4-fast',
+        name: 'Grok 4 (Fast)',
+        provider: 'xAI',
+        capabilities: ['fast', 'chat'],
+        description: 'xAI Grok 4 - tuned for fast conversational responses'
     },
-    { 
-        id: 'openai/o1-preview', 
-        name: 'o1 Preview', 
-        provider: 'OpenAI', 
-        capabilities: ['reasoning'],
-        description: 'Advanced reasoning model'
+    {
+        id: 'x-ai/grok-code-fast-1',
+        name: 'Grok Code (Fast)',
+        provider: 'xAI',
+        capabilities: ['fast', 'code'],
+        description: 'xAI Grok family model optimized for code understanding and generation'
     },
-    
+
     // Anthropic
-    { 
-        id: 'anthropic/claude-3.5-sonnet', 
-        name: 'Claude 3.5 Sonnet', 
-        provider: 'Anthropic', 
-        capabilities: ['vision', 'tools'],
-        description: 'Best balance of intelligence and speed'
+    {
+        id: 'anthropic/claude-opus-4.5',
+        name: 'Claude Opus 4.5',
+        provider: 'Anthropic',
+        capabilities: ['vision', 'chat'],
+        description: 'Anthropic Claude Opus — high-capacity multimodal chat model'
     },
-    { 
-        id: 'anthropic/claude-3-opus', 
-        name: 'Claude 3 Opus', 
-        provider: 'Anthropic', 
-        capabilities: ['vision'],
-        description: 'Most powerful Claude model'
+    {
+        id: 'anthropic/claude-haiku-4.5',
+        name: 'Claude Haiku 4.5',
+        provider: 'Anthropic',
+        capabilities: ['vision', 'chat', 'fast'],
+        description: 'Anthropic Claude Haiku — lightweight, low-latency variant'
     },
-    { 
-        id: 'anthropic/claude-3-haiku', 
-        name: 'Claude 3 Haiku', 
-        provider: 'Anthropic', 
-        capabilities: ['vision'],
-        description: 'Fastest Claude model'
+    {
+        id: 'anthropic/claude-sonnet-4.5',
+        name: 'Claude Sonnet 4.5',
+        provider: 'Anthropic',
+        capabilities: ['vision', 'chat', 'balanced'],
+        description: 'Anthropic Claude Sonnet — balanced model for quality and speed'
     },
-    
-    // Google
-    { 
-        id: 'google/gemini-pro-1.5', 
-        name: 'Gemini Pro 1.5', 
-        provider: 'Google', 
-        capabilities: ['vision'],
-        description: 'Google\'s most capable model'
+
+    // Google - Chat
+    {
+        id: 'google/gemini-3-pro-preview',
+        name: 'Gemini 3 Pro (Preview)',
+        provider: 'Google',
+        capabilities: ['vision', 'chat', 'tools'],
+        description: 'Google Gemini 3 Pro preview — multimodal and tools-enabled'
     },
-    { 
-        id: 'google/gemini-flash-1.5', 
-        name: 'Gemini Flash 1.5', 
-        provider: 'Google', 
-        capabilities: ['vision'],
-        description: 'Fast and efficient Gemini'
+    {
+        id: 'google/gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro',
+        provider: 'Google',
+        capabilities: ['vision', 'chat'],
+        description: 'Gemini 2.5 Pro — capable multimodal conversational model'
     },
-    
-    // Meta
-    { 
-        id: 'meta-llama/llama-3.1-405b-instruct', 
-        name: 'Llama 3.1 405B', 
-        provider: 'Meta', 
-        capabilities: [],
-        description: 'Largest open-source model'
+    {
+        id: 'google/gemini-2.5-flash',
+        name: 'Gemini 2.5 Flash',
+        provider: 'Google',
+        capabilities: ['fast', 'chat'],
+        description: 'Gemini Flash — lightweight and fast conversational model'
     },
-    { 
-        id: 'meta-llama/llama-3.1-70b-instruct', 
-        name: 'Llama 3.1 70B', 
-        provider: 'Meta', 
-        capabilities: [],
-        description: 'Powerful open-source model'
+    {
+        id: 'google/gemini-2.5-flash-lite',
+        name: 'Gemini 2.5 Flash (Lite)',
+        provider: 'Google',
+        capabilities: ['fast', 'chat', 'lightweight'],
+        description: 'Flash (Lite) — ultra-lightweight low-latency variant'
     },
-    
-    // Mistral
-    { 
-        id: 'mistralai/mistral-large', 
-        name: 'Mistral Large', 
-        provider: 'Mistral', 
-        capabilities: ['tools'],
-        description: 'Mistral\'s flagship model'
+
+    // OpenAI - Image generation
+    {
+        id: 'openai/gpt-5-image',
+        name: 'GPT-5 Image',
+        provider: 'OpenAI',
+        capabilities: ['image', 'vision'],
+        description: 'OpenAI GPT-5 image model — high-quality image generation'
     },
-    { 
-        id: 'mistralai/mixtral-8x22b-instruct', 
-        name: 'Mixtral 8x22B', 
-        provider: 'Mistral', 
-        capabilities: [],
-        description: 'Mixture of experts model'
+    {
+        id: 'openai/gpt-5-image-mini',
+        name: 'GPT-5 Image (Mini)',
+        provider: 'OpenAI',
+        capabilities: ['image', 'fast'],
+        description: 'Smaller/faster image generation model for lower-latency use'
     },
-    
-    // Others
-    { 
-        id: 'deepseek/deepseek-chat', 
-        name: 'DeepSeek Chat', 
-        provider: 'DeepSeek', 
-        capabilities: [],
-        description: 'Cost-effective chat model'
+
+    // Google - Image generation
+    {
+        id: 'google/gemini-3-pro-image-preview',
+        name: 'Gemini 3 Pro Image (Preview)',
+        provider: 'Google',
+        capabilities: ['image', 'vision'],
+        description: 'Google Gemini 3 Pro image generation (preview)'
     },
-    { 
-        id: 'qwen/qwen-2.5-72b-instruct', 
-        name: 'Qwen 2.5 72B', 
-        provider: 'Qwen', 
-        capabilities: [],
-        description: 'Alibaba\'s advanced model'
+    {
+        id: 'google/gemini-2.5-flash-image',
+        name: 'Gemini 2.5 Flash Image',
+        provider: 'Google',
+        capabilities: ['image', 'fast'],
+        description: 'Gemini 2.5 Flash image model — fast image generation'
     },
 ];
 
@@ -159,5 +159,5 @@ export function getProviders() {
 /**
  * Default model ID
  */
-export const DEFAULT_MODEL = 'openai/gpt-4o';
+export const DEFAULT_MODEL = 'openai/gpt-5.1';
 

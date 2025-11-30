@@ -154,3 +154,74 @@ export function isInViewport(element) {
     );
 }
 
+/**
+ * Show a custom confirmation dialog
+ * @param {string} message - The message to display
+ * @param {Object} [options] - Options
+ * @param {string} [options.title] - Dialog title
+ * @param {string} [options.confirmText] - Confirm button text
+ * @param {string} [options.cancelText] - Cancel button text
+ * @param {boolean} [options.danger] - Whether this is a dangerous action
+ * @returns {Promise<boolean>} - Resolves true if confirmed, false if cancelled
+ */
+export function showConfirm(message, options = {}) {
+    const {
+        title = 'Confirm',
+        confirmText = 'Confirm',
+        cancelText = 'Cancel',
+        danger = false,
+    } = options;
+    
+    return new Promise((resolve) => {
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-[9999] animate-fade-in';
+        overlay.id = 'confirmDialog';
+        
+        overlay.innerHTML = `
+            <div class="bg-lamp-card rounded-2xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+                <div class="p-6">
+                    <h3 class="text-lg font-semibold text-lamp-text mb-2">${title}</h3>
+                    <p class="text-lamp-muted text-sm">${message}</p>
+                </div>
+                <div class="flex border-t border-lamp-border">
+                    <button id="confirmCancel" class="flex-1 py-3 text-sm font-medium text-lamp-muted hover:bg-lamp-input transition-colors">
+                        ${cancelText}
+                    </button>
+                    <button id="confirmOk" class="flex-1 py-3 text-sm font-medium ${danger ? 'text-red-600 hover:bg-red-50' : 'text-lamp-accent hover:bg-lamp-input'} border-l border-lamp-border transition-colors">
+                        ${confirmText}
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        
+        const cleanup = (result) => {
+            overlay.remove();
+            resolve(result);
+        };
+        
+        // Handle clicks
+        overlay.querySelector('#confirmCancel').addEventListener('click', () => cleanup(false));
+        overlay.querySelector('#confirmOk').addEventListener('click', () => cleanup(true));
+        
+        // Click outside to cancel
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) cleanup(false);
+        });
+        
+        // Escape key to cancel
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                document.removeEventListener('keydown', handleEscape);
+                cleanup(false);
+            }
+        };
+        document.addEventListener('keydown', handleEscape);
+        
+        // Focus confirm button
+        overlay.querySelector('#confirmOk').focus();
+    });
+}
+

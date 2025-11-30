@@ -22,10 +22,10 @@ export class MessageInput {
             selectedModelName: null,
             webSearchBtn: null,
         };
-        
+
         this._unsubscribers = [];
     }
-    
+
     /**
      * Initialize the message input
      * @param {string} containerId - Container element ID
@@ -36,14 +36,14 @@ export class MessageInput {
             console.error('Message input container not found');
             return;
         }
-        
+
         container.innerHTML = this._render();
         this._cacheElements();
         this._bindEvents();
         this._subscribeToState();
         this.refresh();
     }
-    
+
     /**
      * Render message input HTML
      * @private
@@ -53,7 +53,8 @@ export class MessageInput {
             <div class="p-4 pb-6 bg-gradient-to-t from-lamp-bg via-lamp-bg to-transparent relative z-10">
                 <div class="max-w-3xl mx-auto">
                     <form id="chatForm" class="relative">
-                        <div class="bg-lamp-card border border-lamp-border rounded-2xl shadow-lg focus-within:border-lamp-muted/50 focus-within:shadow-xl transition-all duration-200 overflow-hidden">
+                        <!-- Allow popovers/dropdowns to escape the card so they don't get clipped by the rounded card container -->
+                        <div class="bg-lamp-card border border-lamp-border rounded-2xl shadow-lg focus-within:border-lamp-muted/50 focus-within:shadow-xl transition-all duration-200 overflow-visible">
                             <textarea id="messageInput" 
                                 placeholder="Type your message here..." 
                                 rows="1"
@@ -110,7 +111,7 @@ export class MessageInput {
             </div>
         `;
     }
-    
+
     /**
      * Cache element references
      * @private
@@ -126,7 +127,7 @@ export class MessageInput {
         this.elements.selectedModelName = $('selectedModelName');
         this.elements.webSearchBtn = $('webSearchBtn');
     }
-    
+
     /**
      * Bind event handlers
      * @private
@@ -137,29 +138,29 @@ export class MessageInput {
             e.preventDefault();
             this._handleSubmit();
         });
-        
+
         // Textarea auto-resize and enter key
         this.elements.textarea?.addEventListener('input', () => {
             this._autoResize();
         });
-        
+
         this.elements.textarea?.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this._handleSubmit();
             }
         });
-        
+
         // Model dropdown toggle
         this.elements.modelButton?.addEventListener('click', () => {
             this._toggleModelDropdown();
         });
-        
+
         // Model search
         this.elements.modelSearch?.addEventListener('input', (e) => {
             this._filterModels(e.target.value);
         });
-        
+
         // Model selection (delegated)
         this.elements.modelList?.addEventListener('click', (e) => {
             const btn = e.target.closest('[data-model-id]');
@@ -167,21 +168,21 @@ export class MessageInput {
                 this._selectModel(btn.dataset.modelId);
             }
         });
-        
+
         // Web search toggle
         this.elements.webSearchBtn?.addEventListener('click', () => {
             this._toggleWebSearch();
         });
-        
+
         // Close dropdown on outside click
         document.addEventListener('click', (e) => {
-            if (!this.elements.modelDropdown?.contains(e.target) && 
+            if (!this.elements.modelDropdown?.contains(e.target) &&
                 !this.elements.modelButton?.contains(e.target)) {
                 this.elements.modelDropdown?.classList.add('hidden');
             }
         });
     }
-    
+
     /**
      * Subscribe to state changes
      * @private
@@ -194,7 +195,7 @@ export class MessageInput {
             }),
         );
     }
-    
+
     /**
      * Refresh the input component
      */
@@ -203,7 +204,7 @@ export class MessageInput {
         this._updateWebSearchButton();
         this._renderModelList();
     }
-    
+
     /**
      * Auto-resize textarea
      * @private
@@ -211,11 +212,11 @@ export class MessageInput {
     _autoResize() {
         const textarea = this.elements.textarea;
         if (!textarea) return;
-        
+
         textarea.style.height = 'auto';
         textarea.style.height = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT) + 'px';
     }
-    
+
     /**
      * Handle form submission
      * @private
@@ -223,18 +224,18 @@ export class MessageInput {
     _handleSubmit() {
         const message = this.elements.textarea?.value.trim();
         if (!message || stateManager.isStreaming) return;
-        
+
         if (this.onSubmit) {
             this.onSubmit(message);
         }
-        
+
         // Clear input
         if (this.elements.textarea) {
             this.elements.textarea.value = '';
             this.elements.textarea.style.height = 'auto';
         }
     }
-    
+
     /**
      * Toggle model dropdown
      * @private
@@ -245,7 +246,7 @@ export class MessageInput {
             this.elements.modelSearch?.focus();
         }
     }
-    
+
     /**
      * Render model list
      * @private
@@ -254,7 +255,7 @@ export class MessageInput {
         const settings = stateManager.settings;
         const enabledModels = MODELS.filter(m => settings?.enabledModels?.includes(m.id) ?? true);
         const selectedModel = settings?.selectedModel;
-        
+
         let html = '';
         for (const model of enabledModels) {
             const isSelected = model.id === selectedModel;
@@ -269,10 +270,10 @@ export class MessageInput {
                 </button>
             `;
         }
-        
+
         setHtml(this.elements.modelList, html || '<div class="px-3 py-4 text-center text-sm text-lamp-muted">No models available</div>');
     }
-    
+
     /**
      * Filter models by search query
      * @private
@@ -282,12 +283,12 @@ export class MessageInput {
         const enabledModels = MODELS.filter(m => settings?.enabledModels?.includes(m.id) ?? true);
         const selectedModel = settings?.selectedModel;
         const lowerQuery = query.toLowerCase();
-        
-        const filtered = enabledModels.filter(m => 
+
+        const filtered = enabledModels.filter(m =>
             m.name.toLowerCase().includes(lowerQuery) ||
             m.provider.toLowerCase().includes(lowerQuery)
         );
-        
+
         let html = '';
         for (const model of filtered) {
             const isSelected = model.id === selectedModel;
@@ -302,10 +303,10 @@ export class MessageInput {
                 </button>
             `;
         }
-        
+
         setHtml(this.elements.modelList, html || '<div class="px-3 py-4 text-center text-sm text-lamp-muted">No models found</div>');
     }
-    
+
     /**
      * Select a model
      * @private
@@ -316,7 +317,7 @@ export class MessageInput {
         this._renderModelList();
         this.elements.modelDropdown?.classList.add('hidden');
     }
-    
+
     /**
      * Update selected model display
      * @private
@@ -328,7 +329,7 @@ export class MessageInput {
             this.elements.selectedModelName.textContent = model?.name || 'Select Model';
         }
     }
-    
+
     /**
      * Toggle web search
      * @private
@@ -338,7 +339,7 @@ export class MessageInput {
         await stateManager.updateSettings({ webSearchEnabled: !settings?.webSearchEnabled });
         this._updateWebSearchButton();
     }
-    
+
     /**
      * Update web search button state
      * @private
@@ -347,7 +348,7 @@ export class MessageInput {
         const settings = stateManager.settings;
         const btn = this.elements.webSearchBtn;
         if (!btn) return;
-        
+
         if (settings?.webSearchEnabled) {
             btn.classList.add('bg-lamp-accent', 'text-white');
             btn.classList.remove('text-lamp-muted', 'hover:text-lamp-text', 'hover:bg-lamp-input');
@@ -356,7 +357,7 @@ export class MessageInput {
             btn.classList.add('text-lamp-muted', 'hover:text-lamp-text', 'hover:bg-lamp-input');
         }
     }
-    
+
     /**
      * Set disabled state
      * @private
@@ -369,7 +370,7 @@ export class MessageInput {
             this.elements.textarea.disabled = disabled;
         }
     }
-    
+
     /**
      * Set the input value
      * @param {string} value 
@@ -381,14 +382,14 @@ export class MessageInput {
             this._autoResize();
         }
     }
-    
+
     /**
      * Focus the input
      */
     focus() {
         this.elements.textarea?.focus();
     }
-    
+
     /**
      * Set event handlers
      * @param {Object} handlers 
@@ -396,7 +397,7 @@ export class MessageInput {
     setHandlers(handlers) {
         this.onSubmit = handlers.onSubmit;
     }
-    
+
     /**
      * Cleanup
      */

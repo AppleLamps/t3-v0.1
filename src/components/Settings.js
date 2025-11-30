@@ -2,7 +2,7 @@
 // ===================================
 
 import { stateManager } from '../services/state.js';
-import { $, setHtml } from '../utils/dom.js';
+import { $, setHtml, showConfirm } from '../utils/dom.js';
 import { MODELS } from '../config/models.js';
 import { APP_NAME } from '../config/constants.js';
 
@@ -637,7 +637,13 @@ export class Settings {
      * @private
      */
     async _clearData() {
-        if (confirm('Are you sure you want to delete all your data? This cannot be undone.')) {
+        const confirmed = await showConfirm('Are you sure you want to delete all your data? This cannot be undone.', {
+            title: 'Delete All Data',
+            confirmText: 'Delete Everything',
+            cancelText: 'Cancel',
+            danger: true,
+        });
+        if (confirmed) {
             await stateManager.clearAllData();
             this._updateChatCount();
             this._showToast('All data deleted');
