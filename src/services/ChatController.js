@@ -8,9 +8,11 @@ import { isImageGenerationModel } from '../config/models.js';
 
 /**
  * Dynamic system prompt that injects current date/time context
+ * @param {string} [projectInstructions] - Optional project-specific instructions to append
  * @returns {string} The system prompt with current context
  */
-export const getSystemPrompt = () => `You are a helpful, knowledgeable, and friendly AI assistant named LampChat. Your goal is to provide accurate, well-formatted, and contextually appropriate responses.
+export const getSystemPrompt = (projectInstructions = '') => {
+    let prompt = `You are a helpful, knowledgeable, and friendly AI assistant named LampChat. Your goal is to provide accurate, well-formatted, and contextually appropriate responses.
 
 ## Context
 - **Current Date**: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
@@ -61,6 +63,19 @@ export const getSystemPrompt = () => `You are a helpful, knowledgeable, and frie
 - **Updates**: Acknowledge if information might be outdated and suggest verification
 `;
 
+    // Append project-specific instructions if provided
+    if (projectInstructions && projectInstructions.trim()) {
+        prompt += `
+
+## Project-Specific Instructions
+
+${projectInstructions.trim()}
+`;
+    }
+
+    return prompt;
+};
+
 /**
  * Chat controller - handles message operations
  */
@@ -99,6 +114,53 @@ export class ChatController {
                 .join('\n');
         }
         return '';
+    }
+
+    /**
+     * Get project context (instructions and files) for the current chat
+     * @returns {{instructions: string, filesContext: string}|null}
+     */
+    _getProjectContext() {
+        const chat = stateManager.currentChat;
+        if (!chat?.projectId) return null;
+
+        const project = stateManager.state.projects[chat.projectId];
+        if (!project) return null;
+
+        const instructions = project.instructions || '';
+
+        // Build context from project files
+        let filesContext = '';
+        if (project.files && project.files.length > 0) {
+            const textFiles = project.files.filter(f =>
+                f.type?.startsWith('text/') ||
+                f.name?.endsWith('.txt') ||
+                f.name?.endsWith('.md') ||
+                f.name?.endsWith('.json')
+            );
+
+            if (textFiles.length > 0) {
+                filesContext = '## Project Knowledge Base\n\nThe following files have been provided as context:\n\n';
+                for (const file of textFiles) {
+                    try {
+                        // Decode base64 data if present
+                        let content = '';
+                        if (file.data) {
+                            // Handle data URL format
+                            const base64Data = file.data.includes(',')
+                                ? file.data.split(',')[1]
+                                : file.data;
+                            content = atob(base64Data);
+                        }
+                        filesContext += `### ${file.name}\n\`\`\`\n${content}\n\`\`\`\n\n`;
+                    } catch (e) {
+                        console.error('Failed to decode file:', file.name, e);
+                    }
+                }
+            }
+        }
+
+        return { instructions, filesContext };
     }
 
     /**
@@ -271,11 +333,24 @@ export class ChatController {
     async _handleChatStream(messages, model, messageId, attachments) {
         let streamedContent = '';
 
-        // Prepend system prompt to ensure consistent formatting
+        // Get project context if applicable
+        const projectContext = this._getProjectContext();
+        const systemPrompt = getSystemPrompt(projectContext?.instructions || '');
+
+        // Build messages array with system prompt
         const messagesWithSystem = [
-            { role: 'system', content: getSystemPrompt() },
-            ...messages,
+            { role: 'system', content: systemPrompt },
         ];
+
+        // Add project files context if available
+        if (projectContext?.filesContext) {
+            messagesWithSystem.push({
+                role: 'system',
+                content: projectContext.filesContext,
+            });
+        }
+
+        messagesWithSystem.push(...messages);
 
         await this.openRouter.chatStream(
             model,
@@ -328,11 +403,24 @@ export class ChatController {
     async _handleRegenerateStream(messages, model, messageId, attachments) {
         let streamedContent = '';
 
-        // Prepend system prompt to ensure consistent formatting
+        // Get project context if applicable
+        const projectContext = this._getProjectContext();
+        const systemPrompt = getSystemPrompt(projectContext?.instructions || '');
+
+        // Build messages array with system prompt
         const messagesWithSystem = [
-            { role: 'system', content: getSystemPrompt() },
-            ...messages,
+            { role: 'system', content: systemPrompt },
         ];
+
+        // Add project files context if available
+        if (projectContext?.filesContext) {
+            messagesWithSystem.push({
+                role: 'system',
+                content: projectContext.filesContext,
+            });
+        }
+
+        messagesWithSystem.push(...messages);
 
         await this.openRouter.chatStream(
             model,

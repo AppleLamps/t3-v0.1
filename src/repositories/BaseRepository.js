@@ -41,6 +41,30 @@
  */
 
 /**
+ * @typedef {Object} Project
+ * @property {string} id - Unique identifier
+ * @property {string} userId - Owner user ID
+ * @property {string} name - Project name
+ * @property {string} description - Project description
+ * @property {string} instructions - Custom system prompt for this project
+ * @property {string} visibility - 'private' | 'shared'
+ * @property {ProjectFile[]} files - Array of project files
+ * @property {number} createdAt - Creation timestamp
+ * @property {number} updatedAt - Last update timestamp
+ */
+
+/**
+ * @typedef {Object} ProjectFile
+ * @property {string} id - Unique identifier
+ * @property {string} projectId - Parent project ID
+ * @property {string} name - File name
+ * @property {string} type - MIME type
+ * @property {string} data - Base64 encoded file data
+ * @property {number} size - File size in bytes
+ * @property {number} createdAt - Creation timestamp
+ */
+
+/**
  * Base repository class - defines the interface for data access
  * @abstract
  */
@@ -48,7 +72,7 @@ export class BaseRepository {
     // ==================
     // Chat Operations
     // ==================
-    
+
     /**
      * Get all chats for a user
      * @param {string} [userId] - Optional user ID filter
@@ -57,7 +81,7 @@ export class BaseRepository {
     async getChats(userId) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Get a single chat by ID
      * @param {string} chatId 
@@ -66,7 +90,7 @@ export class BaseRepository {
     async getChatById(chatId) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Create a new chat
      * @param {Partial<Chat>} chatData 
@@ -75,7 +99,7 @@ export class BaseRepository {
     async createChat(chatData) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Update an existing chat
      * @param {string} chatId 
@@ -85,7 +109,7 @@ export class BaseRepository {
     async updateChat(chatId, updates) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Delete a chat
      * @param {string} chatId 
@@ -94,7 +118,7 @@ export class BaseRepository {
     async deleteChat(chatId) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Search chats by title or content
      * @param {string} query 
@@ -104,11 +128,11 @@ export class BaseRepository {
     async searchChats(query, userId) {
         throw new Error('Method not implemented');
     }
-    
+
     // ==================
     // Message Operations
     // ==================
-    
+
     /**
      * Add a message to a chat
      * @param {string} chatId 
@@ -118,7 +142,7 @@ export class BaseRepository {
     async addMessage(chatId, messageData) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Update a message
      * @param {string} chatId 
@@ -129,7 +153,7 @@ export class BaseRepository {
     async updateMessage(chatId, messageId, updates) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Get messages for a chat
      * @param {string} chatId 
@@ -138,11 +162,11 @@ export class BaseRepository {
     async getMessages(chatId) {
         throw new Error('Method not implemented');
     }
-    
+
     // ==================
     // User Operations
     // ==================
-    
+
     /**
      * Get user by ID
      * @param {string} userId 
@@ -151,7 +175,7 @@ export class BaseRepository {
     async getUser(userId) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Create or update user
      * @param {Partial<User>} userData 
@@ -160,11 +184,11 @@ export class BaseRepository {
     async saveUser(userData) {
         throw new Error('Method not implemented');
     }
-    
+
     // ==================
     // Settings Operations
     // ==================
-    
+
     /**
      * Get settings for a user
      * @param {string} [userId] 
@@ -173,7 +197,7 @@ export class BaseRepository {
     async getSettings(userId) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Save settings
      * @param {Partial<Settings>} settings 
@@ -183,33 +207,112 @@ export class BaseRepository {
     async saveSettings(settings, userId) {
         throw new Error('Method not implemented');
     }
-    
+
+    // ==================
+    // Project Operations
+    // ==================
+
+    /**
+     * Get all projects for a user
+     * @param {string} [userId] - Optional user ID filter
+     * @returns {Promise<Project[]>}
+     */
+    async getProjects(userId) {
+        throw new Error('Method not implemented');
+    }
+
+    /**
+     * Get a single project by ID
+     * @param {string} projectId
+     * @returns {Promise<Project|null>}
+     */
+    async getProjectById(projectId) {
+        throw new Error('Method not implemented');
+    }
+
+    /**
+     * Create a new project
+     * @param {Partial<Project>} projectData
+     * @returns {Promise<Project>}
+     */
+    async createProject(projectData) {
+        throw new Error('Method not implemented');
+    }
+
+    /**
+     * Update an existing project
+     * @param {string} projectId
+     * @param {Partial<Project>} updates
+     * @returns {Promise<Project>}
+     */
+    async updateProject(projectId, updates) {
+        throw new Error('Method not implemented');
+    }
+
+    /**
+     * Delete a project
+     * @param {string} projectId
+     * @returns {Promise<boolean>}
+     */
+    async deleteProject(projectId) {
+        throw new Error('Method not implemented');
+    }
+
+    /**
+     * Add a file to a project
+     * @param {string} projectId
+     * @param {Partial<ProjectFile>} fileData
+     * @returns {Promise<ProjectFile>}
+     */
+    async addProjectFile(projectId, fileData) {
+        throw new Error('Method not implemented');
+    }
+
+    /**
+     * Remove a file from a project
+     * @param {string} projectId
+     * @param {string} fileId
+     * @returns {Promise<boolean>}
+     */
+    async removeProjectFile(projectId, fileId) {
+        throw new Error('Method not implemented');
+    }
+
+    /**
+     * Get chats for a specific project
+     * @param {string} projectId
+     * @returns {Promise<Chat[]>}
+     */
+    async getProjectChats(projectId) {
+        throw new Error('Method not implemented');
+    }
+
     // ==================
     // Bulk Operations
     // ==================
-    
+
     /**
      * Export all data
-     * @param {string} [userId] 
+     * @param {string} [userId]
      * @returns {Promise<Object>}
      */
     async exportAll(userId) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Import data
-     * @param {Object} data 
-     * @param {string} [userId] 
+     * @param {Object} data
+     * @param {string} [userId]
      * @returns {Promise<boolean>}
      */
     async importAll(data, userId) {
         throw new Error('Method not implemented');
     }
-    
+
     /**
      * Clear all data
-     * @param {string} [userId] 
+     * @param {string} [userId]
      * @returns {Promise<boolean>}
      */
     async clearAll(userId) {

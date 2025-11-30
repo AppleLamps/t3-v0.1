@@ -21,7 +21,11 @@
         <div id="sidebarContainer"></div>
 
         <!-- Main Content - The "white card" floating on sidebar background -->
-        <main class="flex-1 flex flex-col min-w-0 bg-lamp-card rounded-tl-3xl border-l border-t border-lamp-border overflow-hidden">
+        <main
+            class="flex-1 flex flex-col min-w-0 bg-lamp-card rounded-tl-3xl border-l border-t border-lamp-border overflow-hidden">
+            <!-- Project Dashboard Container (toggled by JS) -->
+            <div id="projectDashboardContainer" class="flex-1 min-h-0" style="display: none;"></div>
+
             <!-- Chat Container -->
             <div id="chatContainer" class="flex-1 flex flex-col min-h-0"></div>
 
@@ -32,9 +36,12 @@
 
     <!-- Settings Modal Container -->
     <div id="settingsContainer"></div>
-    
+
     <!-- Auth Modal Container -->
     <div id="authContainer"></div>
+
+    <!-- Project Modal Container -->
+    <div id="projectModalContainer"></div>
 
     <!-- Main Application Script -->
     <script type="module" src="/main.js"></script>

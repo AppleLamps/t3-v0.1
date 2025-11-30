@@ -104,7 +104,7 @@ export class NeonRepository extends BaseRepository {
             // This allows the UI to update immediately without waiting for server response
             const clientId = messageData.id || crypto.randomUUID();
             const dataWithId = { ...messageData, id: clientId };
-            
+
             const message = await this._request('addMessage', { chatId, data: dataWithId });
             return message;
         } catch (error) {
@@ -217,6 +217,90 @@ export class NeonRepository extends BaseRepository {
     }
 
     // ==================
+    // Project Operations
+    // ==================
+
+    async getProjects(userId) {
+        try {
+            const projects = await this._request('getProjects');
+            return projects || [];
+        } catch (error) {
+            console.error('NeonRepository.getProjects error:', error);
+            return [];
+        }
+    }
+
+    async getProjectById(projectId) {
+        try {
+            const project = await this._request('getProjectById', { projectId });
+            return project || null;
+        } catch (error) {
+            console.error('NeonRepository.getProjectById error:', error);
+            return null;
+        }
+    }
+
+    async createProject(projectData) {
+        try {
+            const project = await this._request('createProject', { data: projectData });
+            return project;
+        } catch (error) {
+            console.error('NeonRepository.createProject error:', error);
+            throw error;
+        }
+    }
+
+    async updateProject(projectId, updates) {
+        try {
+            const project = await this._request('updateProject', { projectId, data: updates });
+            return project;
+        } catch (error) {
+            console.error('NeonRepository.updateProject error:', error);
+            throw error;
+        }
+    }
+
+    async deleteProject(projectId) {
+        try {
+            await this._request('deleteProject', { projectId });
+            return true;
+        } catch (error) {
+            console.error('NeonRepository.deleteProject error:', error);
+            return false;
+        }
+    }
+
+    async addProjectFile(projectId, fileData) {
+        try {
+            const file = await this._request('addProjectFile', { projectId, data: fileData });
+            return file;
+        } catch (error) {
+            console.error('NeonRepository.addProjectFile error:', error);
+            throw error;
+        }
+    }
+
+    async removeProjectFile(projectId, fileId) {
+        try {
+            await this._request('removeProjectFile', { projectId, fileId });
+            return true;
+        } catch (error) {
+            console.error('NeonRepository.removeProjectFile error:', error);
+            return false;
+        }
+    }
+
+    async getProjectChats(projectId) {
+        try {
+            const chats = await this._request('getProjectChats', { projectId });
+            return chats || [];
+        } catch (error) {
+            console.error('NeonRepository.getProjectChats error:', error);
+            return [];
+        }
+    }
+
+    // ==================
     // Bulk Operations
     // ==================
 
@@ -228,10 +312,11 @@ export class NeonRepository extends BaseRepository {
             console.error('NeonRepository.exportAll error:', error);
             return {
                 chats: {},
+                projects: {},
                 user: null,
                 settings: null,
                 exportedAt: new Date().toISOString(),
-                version: '1.0',
+                version: '1.1',
             };
         }
     }

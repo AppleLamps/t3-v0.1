@@ -8,11 +8,13 @@ import { DEFAULT_MODEL } from '../config/models.js';
 /**
  * @typedef {Object} AppState
  * @property {string|null} currentChatId - Currently active chat ID
+ * @property {string|null} currentProjectId - Currently active project ID
  * @property {boolean} isStreaming - Whether a response is being streamed
  * @property {boolean} sidebarOpen - Sidebar visibility
  * @property {Object} user - Current user data
  * @property {Object} settings - User settings
  * @property {Object<string, Object>} chats - Cached chats
+ * @property {Object<string, Object>} projects - Cached projects
  */
 
 /**
@@ -23,11 +25,13 @@ class StateManager {
         /** @type {AppState} */
         this.state = {
             currentChatId: null,
+            currentProjectId: null,
             isStreaming: false,
             sidebarOpen: true,
             user: null,
             settings: null,
             chats: {},
+            projects: {},
         };
 
         /** @type {Map<string, Set<Function>>} */
@@ -56,6 +60,13 @@ class StateManager {
         const chats = await repository.getChats();
         this.state.chats = chats.reduce((acc, chat) => {
             acc[chat.id] = chat;
+            return acc;
+        }, {});
+
+        // Load projects
+        const projects = await repository.getProjects();
+        this.state.projects = projects.reduce((acc, project) => {
+            acc[project.id] = project;
             return acc;
         }, {});
 
@@ -110,8 +121,26 @@ class StateManager {
         return this.state.currentChatId ? this.state.chats[this.state.currentChatId] : null;
     }
 
+    get currentProject() {
+        return this.state.currentProjectId ? this.state.projects[this.state.currentProjectId] : null;
+    }
+
     get allChats() {
-        return Object.values(this.state.chats).sort((a, b) => b.updatedAt - a.updatedAt);
+        // Filter by current project if one is selected
+        const chats = Object.values(this.state.chats);
+        if (this.state.currentProjectId) {
+            return chats
+                .filter(chat => chat.projectId === this.state.currentProjectId)
+                .sort((a, b) => b.updatedAt - a.updatedAt);
+        }
+        // Return non-project chats when no project is selected
+        return chats
+            .filter(chat => !chat.projectId)
+            .sort((a, b) => b.updatedAt - a.updatedAt);
+    }
+
+    get allProjects() {
+        return Object.values(this.state.projects).sort((a, b) => b.updatedAt - a.updatedAt);
     }
 
     get user() {
@@ -146,9 +175,12 @@ class StateManager {
     /**
      * Create a new chat
      * Uses optimistic updates for instant UI response
+     * @param {Object} [options={}] - Options for chat creation
+     * @param {string} [options.projectId] - Project ID to associate with the chat
      * @returns {Promise<Object>}
      */
-    async createChat() {
+    async createChat(options = {}) {
+        const { projectId = this.state.currentProjectId } = options;
         const now = Date.now();
         const tempId = this._generateTempId();
 
@@ -157,6 +189,7 @@ class StateManager {
             id: tempId,
             title: 'New Chat',
             messages: [],
+            projectId: projectId || null,
             createdAt: now,
             updatedAt: now,
             _isOptimistic: true, // Flag to track optimistic state
@@ -181,6 +214,7 @@ class StateManager {
             const serverChat = await repository.createChat({
                 title: 'New Chat',
                 messages: [],
+                projectId: projectId || null,
             });
 
             if (!serverChat || !serverChat.id) {
@@ -476,6 +510,98 @@ class StateManager {
         this.state.user = await repository.saveUser(updates);
         this._notify('userUpdated', this.state.user);
         return this.state.user;
+    }
+
+    // ==================
+    // Project Operations
+    // ==================
+
+    /**
+     * Create a new project
+     * @param {Object} projectData
+     * @returns {Promise<Object>}
+     */
+    async createProject(projectData = {}) {
+        const project = await repository.createProject(projectData);
+        this.state.projects[project.id] = project;
+        this._notify('projectCreated', project);
+        return project;
+    }
+
+    /**
+     * Select a project (or deselect by passing null)
+     * @param {string|null} projectId
+     */
+    async selectProject(projectId) {
+        this.state.currentProjectId = projectId;
+        // Clear current chat when switching projects
+        this.state.currentChatId = null;
+        this._notify('projectSelected', projectId);
+        this._notify('currentChatChanged', null);
+    }
+
+    /**
+     * Update a project
+     * @param {string} projectId
+     * @param {Object} updates
+     * @returns {Promise<Object>}
+     */
+    async updateProject(projectId, updates) {
+        const project = await repository.updateProject(projectId, updates);
+        this.state.projects[projectId] = project;
+        this._notify('projectUpdated', project);
+        return project;
+    }
+
+    /**
+     * Delete a project
+     * @param {string} projectId
+     * @returns {Promise<boolean>}
+     */
+    async deleteProject(projectId) {
+        const success = await repository.deleteProject(projectId);
+        if (success) {
+            delete this.state.projects[projectId];
+            if (this.state.currentProjectId === projectId) {
+                this.state.currentProjectId = null;
+                this._notify('projectSelected', null);
+            }
+            this._notify('projectDeleted', projectId);
+        }
+        return success;
+    }
+
+    /**
+     * Add a file to a project
+     * @param {string} projectId
+     * @param {Object} fileData
+     * @returns {Promise<Object>}
+     */
+    async addProjectFile(projectId, fileData) {
+        const file = await repository.addProjectFile(projectId, fileData);
+        // Update the local project with the new file
+        if (this.state.projects[projectId]) {
+            this.state.projects[projectId].files = this.state.projects[projectId].files || [];
+            this.state.projects[projectId].files.push(file);
+            this._notify('projectUpdated', this.state.projects[projectId]);
+        }
+        return file;
+    }
+
+    /**
+     * Remove a file from a project
+     * @param {string} projectId
+     * @param {string} fileId
+     * @returns {Promise<boolean>}
+     */
+    async removeProjectFile(projectId, fileId) {
+        const success = await repository.removeProjectFile(projectId, fileId);
+        if (success && this.state.projects[projectId]) {
+            this.state.projects[projectId].files =
+                (this.state.projects[projectId].files || []).filter(f => f.id !== fileId);
+            this._notify('projectUpdated', this.state.projects[projectId]);
+        }
+        return success;
     }
 
     // ==================

@@ -12,6 +12,7 @@ export const OPENROUTER_IMAGE_GEN_URL = 'https://openrouter.ai/api/v1/images/gen
 export const STORAGE_KEYS = {
     STATE: 'lampchat_state',
     CHATS: 'lampchat_chats',
+    PROJECTS: 'lampchat_projects',
     SETTINGS: 'lampchat_settings',
     USER: 'lampchat_user',
     AUTH_TOKEN: 'lampchat_auth_token',

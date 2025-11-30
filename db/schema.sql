@@ -52,11 +52,46 @@ CREATE TABLE IF NOT EXISTS user_settings (
 );
 
 -- ==================
+-- Projects Table
+-- ==================
+CREATE TABLE IF NOT EXISTS projects (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL DEFAULT 'New Project',
+    description TEXT DEFAULT '',
+    instructions TEXT DEFAULT '',
+    visibility VARCHAR(50) DEFAULT 'private' CHECK (visibility IN ('private', 'shared')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for faster project lookups
+CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
+CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at DESC);
+
+-- ==================
+-- Project Files Table
+-- ==================
+CREATE TABLE IF NOT EXISTS project_files (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100) NOT NULL,
+    data TEXT NOT NULL,
+    size INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for faster file lookups by project
+CREATE INDEX IF NOT EXISTS idx_project_files_project_id ON project_files(project_id);
+
+-- ==================
 -- Chats Table
 -- ==================
 CREATE TABLE IF NOT EXISTS chats (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
     title VARCHAR(255) DEFAULT 'New Chat',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -64,6 +99,7 @@ CREATE TABLE IF NOT EXISTS chats (
 
 -- Index for faster user chat lookups
 CREATE INDEX IF NOT EXISTS idx_chats_user_id ON chats(user_id);
+CREATE INDEX IF NOT EXISTS idx_chats_project_id ON chats(project_id);
 CREATE INDEX IF NOT EXISTS idx_chats_updated_at ON chats(updated_at DESC);
 
 -- ==================
@@ -118,6 +154,12 @@ CREATE TRIGGER update_chats_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_projects_updated_at ON projects;
+CREATE TRIGGER update_projects_updated_at
+    BEFORE UPDATE ON projects
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 -- ==================
 -- Full-text search for chats (optional, for search functionality)
 -- ==================
@@ -143,3 +185,9 @@ CREATE TRIGGER update_messages_search_vector
     FOR EACH ROW
     EXECUTE FUNCTION update_message_search_vector();
 
+-- ==================
+-- Migration: Projects feature (for existing databases)
+-- ==================
+-- Run these commands if upgrading an existing database:
+-- ALTER TABLE chats ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id) ON DELETE SET NULL;
+-- CREATE INDEX IF NOT EXISTS idx_chats_project_id ON chats(project_id);

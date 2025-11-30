@@ -7,6 +7,8 @@ import './src/style.css';
 import { stateManager, getOpenRouterService, ChatController } from './src/services/index.js';
 import { authService } from './src/services/auth.js';
 import { Sidebar, ChatArea, MessageInput, Settings, AuthModal } from './src/components/index.js';
+import { ProjectModal } from './src/components/ProjectModal.js';
+import { ProjectDashboard } from './src/components/ProjectDashboard.js';
 import { configureMarked } from './src/utils/markdown.js';
 import { showConfirm } from './src/utils/dom.js';
 
@@ -21,11 +23,13 @@ class LampChat {
         this.messageInput = new MessageInput();
         this.settings = new Settings();
         this.authModal = new AuthModal();
+        this.projectModal = new ProjectModal();
+        this.projectDashboard = new ProjectDashboard();
 
         // Services
         this.openRouter = null;
         this.chatController = null;
-        
+
         // Track auth state for reinitialization
         this._lastAuthState = null;
     }
@@ -92,30 +96,26 @@ class LampChat {
      */
     async _handleAuthChange(state) {
         const currentAuthState = state.isLoggedIn;
-        
+
         // Only reinitialize if auth state actually changed
         if (currentAuthState !== this._lastAuthState) {
             console.log('Auth state changed:', currentAuthState ? 'logged in' : 'logged out');
             this._lastAuthState = currentAuthState;
-            
+
             // Reinitialize state manager with new repository
             // This will fetch data from the appropriate source (Neon or localStorage)
             stateManager._initialized = false;
             await stateManager.initialize();
-            
+
             // Update OpenRouter with new settings
             const settings = stateManager.settings;
             this.openRouter.setApiKey(settings?.apiKey || '');
-            
+
             // Refresh sidebar to show updated chats
             this.sidebar.refresh();
-            
-            // Update chat area to show current chat
-            if (stateManager.currentChat) {
-                this.chatArea.renderMessages(stateManager.currentChat.messages);
-            } else {
-                this.chatArea.showWelcome();
-            }
+
+            // Update chat area - renderMessages handles both chat and welcome states
+            this.chatArea.renderMessages();
         }
     }
 
@@ -135,9 +135,15 @@ class LampChat {
 
         // Settings modal
         this.settings.init('settingsContainer');
-        
+
         // Auth modal
         this.authModal.init('authContainer');
+
+        // Project modal
+        this.projectModal.init('projectModalContainer');
+
+        // Project dashboard
+        this.projectDashboard.init('projectDashboardContainer');
     }
 
     /**
@@ -153,6 +159,8 @@ class LampChat {
             onSearch: (query) => this._searchChats(query),
             onSettingsClick: () => this.settings.open(),
             onAuthClick: () => this._handleAuthClick(),
+            onNewProject: () => this._createNewProject(),
+            onSelectProject: (projectId) => this._selectProject(projectId),
         });
 
         // Chat area handlers
@@ -165,6 +173,18 @@ class LampChat {
         // Message input handlers - delegate to chat controller
         this.messageInput.setHandlers({
             onSubmit: (message, attachments) => this.chatController.sendMessage(message, attachments),
+        });
+
+        // Project dashboard handlers
+        this.projectDashboard.setHandlers({
+            onEditProject: (project) => this.projectModal.showEdit(project),
+            onSelectChat: (chatId) => this._selectChat(chatId),
+            onNewChat: () => this._createNewChat(),
+        });
+
+        // Subscribe to project selection changes
+        stateManager.subscribe('projectSelected', (state, projectId) => {
+            this._handleProjectSelection(projectId);
         });
     }
 
@@ -184,7 +204,7 @@ class LampChat {
                     danger: true,
                 }
             );
-            
+
             if (confirmed) {
                 authService.logout();
             }
@@ -244,6 +264,46 @@ class LampChat {
     _usePrompt(prompt) {
         this.messageInput.setValue(prompt);
         this.messageInput.focus();
+    }
+
+    /**
+     * Create a new project
+     * @private
+     */
+    _createNewProject() {
+        this.projectModal.show((project) => {
+            // After project creation, select it
+            stateManager.selectProject(project.id);
+        });
+    }
+
+    /**
+     * Select a project (or deselect if empty string)
+     * @private
+     */
+    async _selectProject(projectId) {
+        await stateManager.selectProject(projectId || null);
+    }
+
+    /**
+     * Handle project selection changes
+     * @private
+     */
+    _handleProjectSelection(projectId) {
+        if (projectId) {
+            // Show project dashboard, hide chat area
+            this.projectDashboard.show();
+            document.getElementById('chatContainer')?.classList.add('hidden');
+            document.getElementById('inputContainer')?.classList.add('hidden');
+        } else {
+            // Hide project dashboard, show chat area
+            this.projectDashboard.hide();
+            document.getElementById('chatContainer')?.classList.remove('hidden');
+            document.getElementById('inputContainer')?.classList.remove('hidden');
+
+            // Refresh chat area - renderMessages handles both chat and welcome states
+            this.chatArea.renderMessages();
+        }
     }
 }
 
