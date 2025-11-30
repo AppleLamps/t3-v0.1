@@ -229,11 +229,25 @@ async function addMessage(userId, chatId, messageData) {
             return { error: 'Chat not found', status: 404 };
         }
 
-        const newMessage = await sql`
-            INSERT INTO messages (chat_id, role, content, model)
-            VALUES (${chatId}, ${messageData.role || 'user'}, ${messageData.content || ''}, ${messageData.model || null})
-            RETURNING id, role, content, model, created_at as "createdAt"
-        `;
+        // Accept client-provided UUID or let the database generate one
+        const clientId = messageData.id || null;
+        
+        let newMessage;
+        if (clientId) {
+            // Use client-provided UUID for optimistic updates
+            newMessage = await sql`
+                INSERT INTO messages (id, chat_id, role, content, model)
+                VALUES (${clientId}, ${chatId}, ${messageData.role || 'user'}, ${messageData.content || ''}, ${messageData.model || null})
+                RETURNING id, role, content, model, created_at as "createdAt"
+            `;
+        } else {
+            // Let database generate UUID
+            newMessage = await sql`
+                INSERT INTO messages (chat_id, role, content, model)
+                VALUES (${chatId}, ${messageData.role || 'user'}, ${messageData.content || ''}, ${messageData.model || null})
+                RETURNING id, role, content, model, created_at as "createdAt"
+            `;
+        }
 
         // Update chat's updated_at
         await sql`UPDATE chats SET updated_at = NOW() WHERE id = ${chatId}`;

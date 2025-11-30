@@ -100,7 +100,12 @@ export class NeonRepository extends BaseRepository {
 
     async addMessage(chatId, messageData) {
         try {
-            const message = await this._request('addMessage', { chatId, data: messageData });
+            // Generate UUID client-side for optimistic updates
+            // This allows the UI to update immediately without waiting for server response
+            const clientId = messageData.id || crypto.randomUUID();
+            const dataWithId = { ...messageData, id: clientId };
+            
+            const message = await this._request('addMessage', { chatId, data: dataWithId });
             return message;
         } catch (error) {
             console.error('NeonRepository.addMessage error:', error);
