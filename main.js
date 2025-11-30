@@ -166,35 +166,41 @@ class LampChat {
      */
     async _regenerateResponse(messageId) {
         if (stateManager.isStreaming) return;
-        
+
         const chat = stateManager.currentChat;
         if (!chat) return;
-        
+
         // Find the message index
         const msgIndex = chat.messages.findIndex(m => m.id === messageId);
         if (msgIndex === -1) return;
-        
+
         // Get messages up to (but not including) this assistant message
+        // Preserve attachments for user messages so they can be rehydrated in chatStream
         const messagesForContext = chat.messages.slice(0, msgIndex).map(m => ({
             role: m.role,
             content: typeof m.content === 'string' ? m.content : this._extractTextContent(m.content),
+            ...(m.role === 'user' && m.attachments?.length > 0 ? { attachments: m.attachments } : {}),
         }));
-        
+
         if (messagesForContext.length === 0) return;
-        
+
+        // Find the last user message before this assistant message to get its attachments
+        const lastUserMsg = chat.messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
+        const attachments = lastUserMsg?.attachments || [];
+
         try {
             // Show typing indicator
             this.chatArea.showTypingIndicator();
             stateManager.setStreaming(true);
-            
+
             // Clear the existing message content
             await stateManager.updateMessage(messageId, { content: '', stats: null, generatedImages: null });
-            
+
             let streamedContent = '';
             const settings = stateManager.settings;
             const selectedModel = settings.selectedModel;
             const isImageGen = isImageGenerationModel(selectedModel);
-            
+
             await this.openRouter.chatStream(
                 selectedModel,
                 messagesForContext,
@@ -206,7 +212,7 @@ class LampChat {
                     },
                     onComplete: async (fullContent, stats, extra) => {
                         this.chatArea.hideTypingIndicator();
-                        
+
                         const updateData = {
                             content: fullContent,
                             stats: {
@@ -222,7 +228,7 @@ class LampChat {
                         if (extra?.images && extra.images.length > 0) {
                             updateData.generatedImages = extra.images;
                         }
-                        
+
                         // Persist final content + stats BEFORE ending streaming
                         // This ensures the single render triggered by setStreaming(false) has all data
                         await stateManager.updateMessage(messageId, updateData);
@@ -232,12 +238,14 @@ class LampChat {
                         console.error('Regenerate error:', error);
                         this.chatArea.hideTypingIndicator();
                         stateManager.setStreaming(false);
-                        
+
                         await stateManager.updateMessage(messageId, {
                             content: `Error: ${error.message}`,
                         });
                     },
-                }
+                },
+                {},
+                attachments // Pass attachments from the original user message
             );
         } catch (error) {
             console.error('Regenerate error:', error);
@@ -313,11 +321,13 @@ class LampChat {
                 content: '',
             });
 
-            // Get conversation history
+            // Get conversation history - preserve attachments for multimodal context
             const chat = stateManager.currentChat;
             const messages = chat.messages.slice(0, -1).map(m => ({
                 role: m.role,
                 content: typeof m.content === 'string' ? m.content : this._extractTextContent(m.content),
+                // Preserve attachments for user messages so they can be rehydrated in chatStream
+                ...(m.role === 'user' && m.attachments?.length > 0 ? { attachments: m.attachments } : {}),
             }));
 
             // Use different approach for image generation vs chat
@@ -325,10 +335,10 @@ class LampChat {
                 // Use non-streaming image generation for better compatibility
                 try {
                     const result = await this.openRouter.generateImage(message, selectedModel);
-                    
+
                     this.chatArea.hideTypingIndicator();
                     stateManager.setStreaming(false);
-                    
+
                     // Build update data
                     const updateData = {
                         content: result.text || 'Image generated successfully.',
@@ -341,13 +351,13 @@ class LampChat {
                     if (result.images && result.images.length > 0) {
                         updateData.generatedImages = result.images;
                     }
-                    
+
                     await stateManager.updateMessage(assistantMsg.id, updateData);
                 } catch (error) {
                     console.error('Image generation error:', error);
                     this.chatArea.hideTypingIndicator();
                     stateManager.setStreaming(false);
-                    
+
                     await stateManager.updateMessage(assistantMsg.id, {
                         content: `Error: ${error.message}`,
                     });
@@ -367,31 +377,31 @@ class LampChat {
                             // Use memory-only update during streaming (no disk write)
                             stateManager.updateStreamingMessage(assistantMsg.id, streamedContent);
                         },
-                    onComplete: async (fullContent, stats, extra) => {
-                        this.chatArea.hideTypingIndicator();
-                        
-                        // Build update data
-                        const updateData = {
-                            content: fullContent,
-                            stats: {
-                                model: selectedModel,
-                                completionTokens: stats.completionTokens,
-                                promptTokens: stats.promptTokens,
-                                tokensPerSecond: stats.tokensPerSecond,
-                                timeToFirstToken: stats.timeToFirstToken,
-                            },
-                        };
+                        onComplete: async (fullContent, stats, extra) => {
+                            this.chatArea.hideTypingIndicator();
 
-                        // Add generated images if present (from image generation models)
-                        if (extra?.images && extra.images.length > 0) {
-                            updateData.generatedImages = extra.images;
-                        }
-                        
-                        // Persist final content + stats BEFORE ending streaming
-                        // This ensures the single render triggered by setStreaming(false) has all data
-                        await stateManager.updateMessage(assistantMsg.id, updateData);
-                        stateManager.setStreaming(false);
-                    },
+                            // Build update data
+                            const updateData = {
+                                content: fullContent,
+                                stats: {
+                                    model: selectedModel,
+                                    completionTokens: stats.completionTokens,
+                                    promptTokens: stats.promptTokens,
+                                    tokensPerSecond: stats.tokensPerSecond,
+                                    timeToFirstToken: stats.timeToFirstToken,
+                                },
+                            };
+
+                            // Add generated images if present (from image generation models)
+                            if (extra?.images && extra.images.length > 0) {
+                                updateData.generatedImages = extra.images;
+                            }
+
+                            // Persist final content + stats BEFORE ending streaming
+                            // This ensures the single render triggered by setStreaming(false) has all data
+                            await stateManager.updateMessage(assistantMsg.id, updateData);
+                            stateManager.setStreaming(false);
+                        },
                         onError: async (error) => {
                             console.error('Stream error:', error);
                             this.chatArea.hideTypingIndicator();

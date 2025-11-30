@@ -3,6 +3,7 @@
 
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+import DOMPurify from 'dompurify';
 
 /**
  * Configure marked with our settings
@@ -29,21 +30,44 @@ export function configureMarked() {
         headerIds: false,
         mangle: false,
     });
+
+    // Configure DOMPurify to allow safe HTML elements used in code highlighting
+    DOMPurify.setConfig({
+        ALLOWED_TAGS: [
+            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+            'p', 'br', 'hr',
+            'ul', 'ol', 'li',
+            'blockquote', 'pre', 'code',
+            'a', 'strong', 'em', 'del', 's',
+            'table', 'thead', 'tbody', 'tr', 'th', 'td',
+            'span', 'div',
+            'img',
+        ],
+        ALLOWED_ATTR: [
+            'href', 'target', 'rel',
+            'class', 'id',
+            'src', 'alt', 'title', 'width', 'height',
+        ],
+        ALLOW_DATA_ATTR: false,
+    });
 }
 
 /**
- * Render markdown to HTML
+ * Render markdown to HTML (sanitized)
  * @param {string} text - Markdown text
- * @returns {string} - HTML string
+ * @returns {string} - Sanitized HTML string
  */
 export function renderMarkdown(text) {
     if (!text) return '';
 
     try {
-        return marked.parse(text);
+        const rawHtml = marked.parse(text);
+        // Sanitize HTML to prevent XSS attacks
+        return DOMPurify.sanitize(rawHtml);
     } catch (e) {
         console.error('Markdown parse error:', e);
-        return text;
+        // Escape the text as fallback to prevent XSS
+        return DOMPurify.sanitize(text);
     }
 }
 

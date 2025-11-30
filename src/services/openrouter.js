@@ -56,7 +56,7 @@ export class OpenRouterService {
         this.baseUrl = OPENROUTER_API_URL;
         this.imageGenUrl = OPENROUTER_IMAGE_GEN_URL;
     }
-    
+
     /**
      * Update the API key
      * @param {string} apiKey 
@@ -64,7 +64,7 @@ export class OpenRouterService {
     setApiKey(apiKey) {
         this.apiKey = apiKey;
     }
-    
+
     /**
      * Check if API key is configured
      * @returns {boolean}
@@ -72,7 +72,7 @@ export class OpenRouterService {
     hasApiKey() {
         return !!this.apiKey;
     }
-    
+
     /**
      * Build request headers
      * @private
@@ -135,7 +135,7 @@ export class OpenRouterService {
 
         return content;
     }
-    
+
     /**
      * Send a chat completion request (non-streaming)
      * @param {string} model - Model ID
@@ -147,7 +147,7 @@ export class OpenRouterService {
         if (!this.apiKey) {
             throw new Error('API key not configured');
         }
-        
+
         const response = await fetch(this.baseUrl, {
             method: 'POST',
             headers: this._getHeaders(),
@@ -158,16 +158,16 @@ export class OpenRouterService {
                 ...options,
             }),
         });
-        
+
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.error?.message || `API request failed: ${response.status}`);
         }
-        
+
         const data = await response.json();
         return data.choices?.[0]?.message?.content || '';
     }
-    
+
     /**
      * Send a streaming chat completion request
      * @param {string} model - Model ID
@@ -181,22 +181,39 @@ export class OpenRouterService {
     async chatStream(model, messages, callbacks, options = {}, attachments = [], retryCount = 0) {
         const MAX_RETRIES = 3;
         const BASE_DELAY = 1000; // 1 second
-        
+
         if (!this.apiKey) {
             callbacks.onError(new Error('API key not configured'));
             return;
         }
-        
-        // Process messages - convert the last user message to multimodal if it has attachments
+
+        // Process messages - convert user messages to multimodal if they have attachments
+        // This handles both:
+        // 1. Attachments passed as separate parameter (for current/new message)
+        // 2. Attachments stored on message objects (for history/regeneration)
         const processedMessages = messages.map((msg, index) => {
-            // Only process the last user message for attachments
-            if (index === messages.length - 1 && msg.role === 'user' && attachments?.length > 0) {
+            // Check if this message has stored attachments (from history)
+            const msgAttachments = msg.attachments || [];
+
+            // For the last user message, also consider separately passed attachments
+            const isLastUserMessage = index === messages.length - 1 && msg.role === 'user';
+            const effectiveAttachments = isLastUserMessage && attachments?.length > 0
+                ? attachments
+                : msgAttachments;
+
+            // Convert to multimodal format if there are attachments
+            if (msg.role === 'user' && effectiveAttachments.length > 0) {
                 return {
-                    ...msg,
-                    content: this._buildMessageContent(msg.content, attachments),
+                    role: msg.role,
+                    content: this._buildMessageContent(msg.content, effectiveAttachments),
                 };
             }
-            return msg;
+
+            // Return message without attachments property (clean for API)
+            return {
+                role: msg.role,
+                content: msg.content,
+            };
         });
 
         // Check if this is an image generation model
@@ -210,7 +227,7 @@ export class OpenRouterService {
         let generatedImages = [];
         let parseFailureCount = 0;
         const MAX_PARSE_FAILURES = 10; // Track parse failures to detect issues
-        
+
         try {
             const requestBody = {
                 model,
@@ -230,32 +247,32 @@ export class OpenRouterService {
                 headers: this._getHeaders(),
                 body: JSON.stringify(requestBody),
             });
-            
+
             if (!response.ok) {
                 const status = response.status;
-                
+
                 // Retry on rate limit (429) or server errors (5xx)
                 if ((status === 429 || (status >= 500 && status < 600)) && retryCount < MAX_RETRIES) {
                     const delay = BASE_DELAY * Math.pow(2, retryCount); // Exponential backoff
                     console.log(`Retrying after ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-                    
+
                     await new Promise(resolve => setTimeout(resolve, delay));
                     return this.chatStream(model, messages, callbacks, options, attachments, retryCount + 1);
                 }
-                
+
                 // Non-retryable error or max retries reached
                 const error = await response.json().catch(() => ({ error: { message: `HTTP ${status}` } }));
                 throw new Error(error.error?.message || `API request failed: ${status}`);
             }
-            
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let fullContent = '';
             let buffer = ''; // Accumulate incomplete lines
-            
+
             while (true) {
                 const { done, value } = await reader.read();
-                
+
                 if (done) {
                     // Process any remaining buffer
                     if (buffer.trim()) {
@@ -265,15 +282,15 @@ export class OpenRouterService {
                             if (line.startsWith('data: ')) {
                                 const data = line.slice(6);
                                 if (data === '[DONE]') continue;
-                                
+
                                 try {
                                     const parsed = JSON.parse(data);
-                                    
+
                                     // Check for usage stats
                                     if (parsed.usage) {
                                         usageStats = parsed.usage;
                                     }
-                                    
+
                                     // Handle text content
                                     const content = parsed.choices?.[0]?.delta?.content || '';
                                     if (content) {
@@ -286,8 +303,8 @@ export class OpenRouterService {
                                     }
 
                                     // Handle generated images
-                                    const images = parsed.choices?.[0]?.delta?.images || 
-                                                  parsed.choices?.[0]?.message?.images;
+                                    const images = parsed.choices?.[0]?.delta?.images ||
+                                        parsed.choices?.[0]?.message?.images;
                                     if (images && images.length > 0) {
                                         for (const img of images) {
                                             const imgUrl = img.image_url?.url || img.imageUrl?.url || img.url;
@@ -307,27 +324,27 @@ export class OpenRouterService {
                     }
                     break;
                 }
-                
+
                 const chunk = decoder.decode(value, { stream: true });
                 buffer += chunk;
-                
+
                 // Split by newlines, keeping incomplete line in buffer
                 const lines = buffer.split('\n');
                 buffer = lines.pop() || ''; // Keep last incomplete line in buffer
-                
+
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
                         const data = line.slice(6);
                         if (data === '[DONE]') continue;
-                        
+
                         try {
                             const parsed = JSON.parse(data);
-                            
+
                             // Check for usage stats (comes in final chunk)
                             if (parsed.usage) {
                                 usageStats = parsed.usage;
                             }
-                            
+
                             // Handle text content
                             const content = parsed.choices?.[0]?.delta?.content || '';
                             if (content) {
@@ -341,8 +358,8 @@ export class OpenRouterService {
                             }
 
                             // Handle generated images (for image generation models)
-                            const images = parsed.choices?.[0]?.delta?.images || 
-                                          parsed.choices?.[0]?.message?.images;
+                            const images = parsed.choices?.[0]?.delta?.images ||
+                                parsed.choices?.[0]?.message?.images;
                             if (images && images.length > 0) {
                                 for (const img of images) {
                                     const imgUrl = img.image_url?.url || img.imageUrl?.url || img.url;
@@ -361,17 +378,17 @@ export class OpenRouterService {
                     }
                 }
             }
-            
+
             // Report if too many parse failures occurred
             if (parseFailureCount > MAX_PARSE_FAILURES) {
                 console.warn(`Warning: ${parseFailureCount} parse failures occurred during streaming. Some data may be incomplete.`);
             }
-            
+
             const endTime = performance.now();
             const totalTimeMs = endTime - startTime;
             const timeToFirstMs = firstTokenTime ? firstTokenTime - startTime : totalTimeMs;
             const generationTimeMs = firstTokenTime ? endTime - firstTokenTime : totalTimeMs;
-            
+
             // Build stats object
             const stats = {
                 completionTokens: usageStats?.completion_tokens || tokenCount,
@@ -381,10 +398,10 @@ export class OpenRouterService {
                 tokensPerSecond: generationTimeMs > 0 ? ((usageStats?.completion_tokens || tokenCount) / (generationTimeMs / 1000)) : 0,
                 totalTime: totalTimeMs / 1000,
             };
-            
+
             // Pass images in the completion callback
             callbacks.onComplete(fullContent, stats, { images: generatedImages });
-            
+
         } catch (error) {
             // Only retry network errors if we haven't exceeded retries
             if (retryCount < MAX_RETRIES && error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -393,7 +410,7 @@ export class OpenRouterService {
                 await new Promise(resolve => setTimeout(resolve, delay));
                 return this.chatStream(model, messages, callbacks, options, attachments, retryCount + 1);
             }
-            
+
             callbacks.onError(error);
         }
     }
@@ -462,7 +479,7 @@ export class OpenRouterService {
 
         return result;
     }
-    
+
     /**
      * Test the API connection
      * @returns {Promise<boolean>}
