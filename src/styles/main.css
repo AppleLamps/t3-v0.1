@@ -30,11 +30,21 @@
     background: #F7F7F5;
     border-radius: 8px;
     padding: 16px;
-    overflow-x: auto;
     margin: 12px 0;
     border: 1px solid #E8E6E1;
     position: relative;
     isolation: isolate;
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+.message-content pre code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .message-content code {
@@ -185,6 +195,17 @@ textarea {
 }
 
 pre:hover .copy-button {
+    opacity: 1;
+}
+
+/* Render button for code blocks */
+.render-button {
+    opacity: 0;
+    transition: opacity 0.2s ease, background-color 0.15s ease, border-color 0.15s ease;
+    z-index: 10;
+}
+
+pre:hover .render-button {
     opacity: 1;
 }
 

@@ -4,6 +4,7 @@
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
+import { showCodeRenderer } from './codeRenderer.js';
 
 /**
  * Configure marked with our settings
@@ -130,11 +131,55 @@ export function addCopyButtons(container) {
 }
 
 /**
+ * Add render buttons to HTML/CSS/JS code blocks
+ * @param {Element} container 
+ */
+export function addRenderButtons(container) {
+    container.querySelectorAll('pre').forEach((pre) => {
+        const codeEl = pre.querySelector('code');
+        if (!codeEl) return;
+        
+        // Detect language from class (language-html, language-css, etc.)
+        const langMatch = codeEl.className.match(/language-(\w+)/);
+        const lang = langMatch?.[1]?.toLowerCase();
+        
+        // Only show for HTML, CSS, JS
+        const renderableLangs = ['html', 'css', 'javascript', 'js'];
+        if (!renderableLangs.includes(lang)) return;
+        
+        // Skip if already has render button
+        if (pre.querySelector('.render-button')) return;
+        
+        const button = document.createElement('button');
+        button.className = 'render-button absolute top-2 right-12 flex items-center justify-center w-8 h-8 rounded-md bg-white/80 hover:bg-white border border-lamp-border/50 hover:border-lamp-border transition-all text-lamp-muted hover:text-lamp-text shadow-sm';
+        button.innerHTML = `
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+            </svg>
+        `;
+        button.title = 'Render code';
+        button.setAttribute('aria-label', 'Render code');
+        
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const code = codeEl.textContent || pre.textContent;
+            showCodeRenderer(code, lang);
+        });
+        
+        // Ensure pre has relative positioning
+        pre.style.position = 'relative';
+        pre.appendChild(button);
+    });
+}
+
+/**
  * Process message content (render markdown + highlight + copy buttons)
  * @param {Element} container 
  */
 export function processMessageContent(container) {
     highlightCodeBlocks(container);
     addCopyButtons(container);
+    addRenderButtons(container);
 }
 

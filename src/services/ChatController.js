@@ -7,6 +7,35 @@ import { stateManager } from './state.js';
 import { isImageGenerationModel } from '../config/models.js';
 
 /**
+ * System prompt to ensure consistent formatting from AI models
+ */
+const SYSTEM_PROMPT = `You are a helpful AI assistant. When responding, follow these formatting rules:
+
+1. **Code Formatting**: ALWAYS wrap code snippets in markdown code fences with the appropriate language identifier. For example:
+   - HTML: \`\`\`html
+   - CSS: \`\`\`css
+   - JavaScript: \`\`\`js or \`\`\`javascript
+   - Python: \`\`\`python
+   - etc.
+
+2. **Never render raw HTML**: When showing HTML, CSS, or JavaScript code, always display it as code in a code block, not as rendered content.
+
+3. **Explanations**: Provide brief explanations before or after code blocks, but keep code in properly fenced blocks.
+
+4. **Complete code**: When asked to create a website, app, or code snippet, provide the complete code in a single code block when possible.
+
+Example of correct formatting:
+Here's a simple HTML page:
+\`\`\`html
+<!DOCTYPE html>
+<html>
+<head><title>Example</title></head>
+<body><h1>Hello World</h1></body>
+</html>
+\`\`\`
+`;
+
+/**
  * Chat controller - handles message operations
  */
 export class ChatController {
@@ -209,9 +238,15 @@ export class ChatController {
     async _handleChatStream(messages, model, messageId, attachments) {
         let streamedContent = '';
 
+        // Prepend system prompt to ensure consistent formatting
+        const messagesWithSystem = [
+            { role: 'system', content: SYSTEM_PROMPT },
+            ...messages,
+        ];
+
         await this.openRouter.chatStream(
             model,
-            messages,
+            messagesWithSystem,
             {
                 onToken: (token) => {
                     streamedContent += token;
@@ -260,9 +295,15 @@ export class ChatController {
     async _handleRegenerateStream(messages, model, messageId, attachments) {
         let streamedContent = '';
 
+        // Prepend system prompt to ensure consistent formatting
+        const messagesWithSystem = [
+            { role: 'system', content: SYSTEM_PROMPT },
+            ...messages,
+        ];
+
         await this.openRouter.chatStream(
             model,
-            messages,
+            messagesWithSystem,
             {
                 onToken: (token) => {
                     streamedContent += token;
