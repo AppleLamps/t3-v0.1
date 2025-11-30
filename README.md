@@ -21,22 +21,37 @@ A modern, lightweight AI chat application inspired by [T3 Chat](https://t3.chat)
 
 ## 🚀 Quick Start
 
-### Option 1: Using a Local Server (Recommended)
+### Development
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/lampchat.git
 cd lampchat
 
-# Start a local server (choose one)
-npx serve .                    # Using serve
-python -m http.server 3000     # Using Python
-php -S localhost:3000          # Using PHP
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
 ```
 
-### Option 2: Direct File Opening
+### Production Build
 
-> ⚠️ Some browsers block ES modules when opening files directly. Use a local server for best results.
+```bash
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+### Deploy to Vercel
+
+1. Push your code to GitHub
+2. Connect the repo to [Vercel](https://vercel.com)
+3. Vercel auto-detects Vite and deploys automatically
+
+> Build command: `npm run build` | Output directory: `dist`
 
 ### Setup Your API Key
 
@@ -107,6 +122,7 @@ const REPOSITORY_TYPE = 'neon';
 **To migrate to Neon Database:**
 
 1. Create `src/repositories/NeonRepository.js`:
+
 ```javascript
 import { BaseRepository } from './BaseRepository.js';
 
@@ -191,10 +207,10 @@ export const MODELS = [
 
 ### Changing the Theme
 
-Edit `tailwind.config` in `index.html`:
+Edit `tailwind.config.js`:
 
 ```javascript
-tailwind.config = {
+export default {
     theme: {
         extend: {
             colors: {
@@ -224,22 +240,34 @@ tailwind.config = {
 ## 🔧 Tech Stack
 
 | Technology | Purpose |
-|------------|---------|
+|------------|----------|
 | **Vanilla JS** | Core application (ES Modules) |
-| **Tailwind CSS** | Styling (CDN) |
+| **Vite** | Build tool & dev server |
+| **Tailwind CSS** | Styling (with PostCSS) |
 | **DM Sans** | Typography |
 | **Highlight.js** | Code syntax highlighting |
-| **Marked.js** | Markdown parsing |
+| **Marked** | Markdown parsing |
 | **OpenRouter** | AI model access |
 
 ## 📦 Dependencies
 
-All dependencies are loaded via CDN — no npm install required:
+Installed via npm:
 
+**Dev Dependencies:**
+
+- [Vite](https://vitejs.dev/) — Fast build tool & dev server
 - [Tailwind CSS](https://tailwindcss.com/) — Utility-first CSS
+- [PostCSS](https://postcss.org/) — CSS processing
+- [Autoprefixer](https://autoprefixer.github.io/) — Vendor prefixes
+
+**Runtime Dependencies:**
+
 - [Highlight.js](https://highlightjs.org/) — Code highlighting
 - [Marked](https://marked.js.org/) — Markdown parser
-- [Google Fonts](https://fonts.google.com/) — DM Sans & JetBrains Mono
+
+**External (Google Fonts CDN):**
+
+- DM Sans & JetBrains Mono
 
 ## 🔐 Privacy & Security
 

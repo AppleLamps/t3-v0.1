@@ -1,0 +1,10 @@
+/* Main CSS Entry Point for Vite/Tailwind */
+
+/* Imports must come first */
+@import 'highlight.js/styles/github.css';
+@import './styles/main.css';
+
+/* Tailwind Directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

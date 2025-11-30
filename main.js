@@ -1,6 +1,9 @@
 // LampChat - Main Entry Point
 // ============================
 
+// Import CSS (processed by Vite + Tailwind)
+import './src/style.css';
+
 import { stateManager, getOpenRouterService } from './src/services/index.js';
 import { Sidebar, ChatArea, MessageInput, Settings } from './src/components/index.js';
 import { configureMarked } from './src/utils/markdown.js';
@@ -15,11 +18,11 @@ class LampChat {
         this.chatArea = new ChatArea();
         this.messageInput = new MessageInput();
         this.settings = new Settings();
-        
+
         // Services
         this.openRouter = null;
     }
-    
+
     /**
      * Initialize the application
      */
@@ -27,39 +30,39 @@ class LampChat {
         try {
             // Configure markdown renderer
             configureMarked();
-            
+
             // Initialize state
             await stateManager.initialize();
-            
+
             // Initialize OpenRouter service with API key from settings
             const settings = stateManager.settings;
             this.openRouter = getOpenRouterService(settings?.apiKey);
-            
+
             // Initialize components
             this._initComponents();
-            
+
             // Set up event handlers
             this._setupHandlers();
-            
+
             // Subscribe to settings changes to update API key
             stateManager.subscribe('settingsUpdated', (state) => {
                 this.openRouter.setApiKey(state.settings?.apiKey || '');
             });
-            
+
             // Check for API key
             if (!settings?.apiKey) {
                 setTimeout(() => {
                     this.settings.open();
                 }, 500);
             }
-            
+
             console.log('LampChat initialized');
-            
+
         } catch (error) {
             console.error('Failed to initialize LampChat:', error);
         }
     }
-    
+
     /**
      * Initialize UI components
      * @private
@@ -67,17 +70,17 @@ class LampChat {
     _initComponents() {
         // Sidebar
         this.sidebar.init('sidebarContainer');
-        
+
         // Chat area
         this.chatArea.init('chatContainer');
-        
+
         // Message input
         this.messageInput.init('inputContainer');
-        
+
         // Settings modal
         this.settings.init('settingsContainer');
     }
-    
+
     /**
      * Set up event handlers
      * @private
@@ -91,19 +94,19 @@ class LampChat {
             onSearch: (query) => this._searchChats(query),
             onSettingsClick: () => this.settings.open(),
         });
-        
+
         // Chat area handlers
         this.chatArea.setHandlers({
             onSettingsClick: () => this.settings.open(),
             onPromptSelect: (prompt) => this._usePrompt(prompt),
         });
-        
+
         // Message input handlers
         this.messageInput.setHandlers({
             onSubmit: (message) => this._sendMessage(message),
         });
     }
-    
+
     /**
      * Create a new chat
      * @private
@@ -111,7 +114,7 @@ class LampChat {
     async _createNewChat() {
         await stateManager.createChat();
     }
-    
+
     /**
      * Select a chat
      * @private
@@ -119,7 +122,7 @@ class LampChat {
     async _selectChat(chatId) {
         await stateManager.selectChat(chatId);
     }
-    
+
     /**
      * Delete a chat
      * @private
@@ -129,7 +132,7 @@ class LampChat {
             await stateManager.deleteChat(chatId);
         }
     }
-    
+
     /**
      * Search chats
      * @private
@@ -138,7 +141,7 @@ class LampChat {
         // The sidebar component handles filtering internally
         // This could be extended for more complex search
     }
-    
+
     /**
      * Use a suggested prompt
      * @private
@@ -147,48 +150,48 @@ class LampChat {
         this.messageInput.setValue(prompt);
         this.messageInput.focus();
     }
-    
+
     /**
      * Send a message
      * @private
      */
     async _sendMessage(message) {
         if (!message.trim()) return;
-        
+
         // Check for API key
         if (!this.openRouter.hasApiKey()) {
             alert('Please set your OpenRouter API key in Settings first.');
             this.settings.open();
             return;
         }
-        
+
         try {
             // Add user message
             await stateManager.addMessage({
                 role: 'user',
                 content: message,
             });
-            
+
             // Show typing indicator
             this.chatArea.showTypingIndicator();
             stateManager.setStreaming(true);
-            
+
             // Add placeholder for assistant message
             const assistantMsg = await stateManager.addMessage({
                 role: 'assistant',
                 content: '',
             });
-            
+
             // Get conversation history
             const chat = stateManager.currentChat;
             const messages = chat.messages.slice(0, -1).map(m => ({
                 role: m.role,
                 content: m.content,
             }));
-            
+
             // Stream response
             const settings = stateManager.settings;
-            
+
             await this.openRouter.chatStream(
                 settings.selectedModel,
                 messages,
@@ -208,14 +211,14 @@ class LampChat {
                         console.error('Stream error:', error);
                         this.chatArea.hideTypingIndicator();
                         stateManager.setStreaming(false);
-                        
+
                         await stateManager.updateMessage(assistantMsg.id, {
                             content: `Error: ${error.message}`,
                         });
                     },
                 }
             );
-            
+
         } catch (error) {
             console.error('Send message error:', error);
             this.chatArea.hideTypingIndicator();
@@ -229,7 +232,7 @@ class LampChat {
 document.addEventListener('DOMContentLoaded', () => {
     const app = new LampChat();
     app.init();
-    
+
     // Expose for debugging
     window.lampChat = app;
 });

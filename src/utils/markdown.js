@@ -1,33 +1,26 @@
 // Markdown Rendering Utilities
 // ============================
 
-// Note: This module requires marked.js and highlight.js to be loaded
-// They are included via CDN in index.html
+import { marked } from 'marked';
+import hljs from 'highlight.js';
 
 /**
  * Configure marked with our settings
  */
 export function configureMarked() {
-    if (typeof marked === 'undefined') {
-        console.warn('marked.js not loaded');
-        return;
-    }
-    
     marked.setOptions({
-        highlight: function(code, lang) {
-            if (typeof hljs !== 'undefined' && lang && hljs.getLanguage(lang)) {
+        highlight: function (code, lang) {
+            if (lang && hljs.getLanguage(lang)) {
                 try {
                     return hljs.highlight(code, { language: lang }).value;
                 } catch (e) {
                     console.warn('Highlight error:', e);
                 }
             }
-            if (typeof hljs !== 'undefined') {
-                try {
-                    return hljs.highlightAuto(code).value;
-                } catch (e) {
-                    console.warn('Auto highlight error:', e);
-                }
+            try {
+                return hljs.highlightAuto(code).value;
+            } catch (e) {
+                console.warn('Auto highlight error:', e);
             }
             return code;
         },
@@ -45,16 +38,7 @@ export function configureMarked() {
  */
 export function renderMarkdown(text) {
     if (!text) return '';
-    
-    if (typeof marked === 'undefined') {
-        // Fallback: basic text with line breaks
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/\n/g, '<br>');
-    }
-    
+
     try {
         return marked.parse(text);
     } catch (e) {
@@ -68,8 +52,6 @@ export function renderMarkdown(text) {
  * @param {Element} container 
  */
 export function highlightCodeBlocks(container) {
-    if (typeof hljs === 'undefined') return;
-    
     container.querySelectorAll('pre code').forEach((block) => {
         try {
             hljs.highlightElement(block);
@@ -87,7 +69,7 @@ export function addCopyButtons(container) {
     container.querySelectorAll('pre').forEach((pre) => {
         // Skip if already has copy button
         if (pre.querySelector('.copy-button')) return;
-        
+
         const button = document.createElement('button');
         button.className = 'copy-button absolute top-2 right-2 p-1.5 rounded bg-lamp-input hover:bg-lamp-border transition-colors text-lamp-muted hover:text-lamp-text';
         button.innerHTML = `
@@ -96,7 +78,7 @@ export function addCopyButtons(container) {
             </svg>
         `;
         button.title = 'Copy code';
-        
+
         button.addEventListener('click', async () => {
             const code = pre.querySelector('code')?.textContent || pre.textContent;
             try {
@@ -117,7 +99,7 @@ export function addCopyButtons(container) {
                 console.error('Copy failed:', e);
             }
         });
-        
+
         pre.style.position = 'relative';
         pre.appendChild(button);
     });

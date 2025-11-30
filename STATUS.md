@@ -1,29 +1,32 @@
 # 📋 LampChat - Project Status
 
-> Last Updated: November 30, 2024
+> Last Updated: November 29, 2025
 
 ## 🎯 Project Overview
 
 **LampChat** is an AI chat application inspired by [T3 Chat](https://t3.chat), built to provide a clean, modern interface for interacting with various AI models through the [OpenRouter API](https://openrouter.ai).
 
 ### Design Goals
+
 - **T3-style interface** — Closely matches T3 Chat's clean, minimal design
 - **Light theme** with black/amber accents (light version of T3 Chat's aesthetic)
 - **Modular architecture** for easy feature additions
 - **Database-ready** design (currently localStorage, prepared for Neon PostgreSQL)
-- **No build step** - vanilla JavaScript with ES modules
+- **Vite-powered** — Modern build tooling with fast HMR, ready for Vercel deployment
 
 ---
 
 ## ✅ Completed Features
 
 ### Core Infrastructure
+
 - [x] **Modular project structure** with clear separation of concerns
 - [x] **Repository pattern** for data access (easy database swap)
 - [x] **State management** with pub/sub pattern for reactive updates
 - [x] **Component system** with lifecycle methods (init, refresh, destroy)
 
 ### UI Components
+
 - [x] **Sidebar** (T3-style)
   - Hamburger toggle button for collapsible sidebar
   - "LampChat" branding next to toggle
@@ -64,6 +67,7 @@
   - Toast notifications on save
 
 ### Backend Services
+
 - [x] **OpenRouter API Integration**
   - Streaming responses (token-by-token)
   - Non-streaming fallback
@@ -78,6 +82,7 @@
   - Data export/import
 
 ### Styling & UX
+
 - [x] T3-inspired light theme with black/amber accents
 - [x] Collapsible sidebar (works on all screen sizes)
 - [x] Floating input bar with shadow
@@ -89,15 +94,25 @@
 - [x] Responsive design
 
 ### Documentation
+
 - [x] Comprehensive README.md
 - [x] MIT License
 - [x] .gitignore for common files
 
 ### Recent Updates (T3 Redesign - Nov 30, 2024)
+
 - [x] **Sidebar redesign** — Added toggle button, narrower width (264px), cleaner styling
 - [x] **Header visibility** — Hidden in empty state, floating settings icon instead
 - [x] **Welcome screen** — Centered layout, T3-style category pills, simple text prompts
 - [x] **Input bar** — Floating card with shadow, attach button, circular send button
+
+### Vite Migration (Nov 29, 2025)
+
+- [x] **Vite build system** — Replaced CDN dependencies with npm packages
+- [x] **Tailwind CSS** — Proper PostCSS integration with `tailwind.config.js`
+- [x] **NPM packages** — `marked` and `highlight.js` now imported as ES modules
+- [x] **Vercel-ready** — Build output to `dist/` directory for easy deployment
+- [x] **Dev server** — Fast HMR with `npm run dev`
 - [x] **Visual polish** — Subtle scrollbars, better transitions, cohesive spacing
 - [x] **Settings page redesign** — Full-page T3-style with user profile sidebar, keyboard shortcuts, tabbed navigation
 - [x] **Model dropdown z-index fix** — Dropdown now appears above input bar correctly
@@ -107,6 +122,7 @@
 ## 🚧 Remaining Work
 
 ### High Priority
+
 - [ ] **Dark mode toggle** - Add theme switcher in settings
 - [ ] **File attachments** - Implement upload logic (Attach button UI already added)
 - [ ] **System prompts** - Custom instructions/personas per chat
@@ -114,6 +130,7 @@
 - [ ] **Stop generation** - Button to cancel streaming response
 
 ### Medium Priority
+
 - [ ] **Neon PostgreSQL integration**
   - Create `NeonRepository.js` implementing `BaseRepository`
   - Add connection configuration
@@ -130,6 +147,7 @@
   - Read-only shared view
 
 ### Low Priority / Nice to Have
+
 - [ ] **Keyboard shortcuts** (Ctrl+K search, Ctrl+N new chat, etc.)
 - [ ] **Message editing** - Edit sent messages
 - [ ] **Message regeneration** - Regenerate last response
@@ -183,12 +201,14 @@ src/
 ### Key Design Decisions
 
 1. **Repository Pattern**: All data access goes through `BaseRepository` interface. To switch from localStorage to Neon:
+
    ```javascript
    // src/repositories/index.js
    const REPOSITORY_TYPE = 'neon'; // Change from 'localStorage'
    ```
 
 2. **State Management**: Single source of truth with reactive updates:
+
    ```javascript
    stateManager.subscribe('chatUpdated', (state, chat) => {
        // React to changes
@@ -196,6 +216,7 @@ src/
    ```
 
 3. **Component Isolation**: Each component manages its own DOM, events, and subscriptions. Communication via handlers:
+
    ```javascript
    sidebar.setHandlers({
        onNewChat: () => stateManager.createChat(),
@@ -208,24 +229,32 @@ src/
 ## 🚀 Getting Started
 
 ### Prerequisites
+
 - Modern browser with ES modules support
 - OpenRouter API key ([get one here](https://openrouter.ai/keys))
 
 ### Running Locally
+
 ```bash
 # Clone the repo
 git clone <repo-url>
 cd lampchat
 
-# Start local server (pick one)
-npx serve .
-python -m http.server 3000
-php -S localhost:3000
+# Install dependencies
+npm install
 
-# Open http://localhost:3000
+# Start dev server
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
 ```
 
 ### First Time Setup
+
 1. App will prompt for API key on first load
 2. Go to Settings → API Keys
 3. Paste your OpenRouter API key
@@ -236,9 +265,14 @@ php -S localhost:3000
 ## 📁 File Inventory
 
 | File | Purpose |
-|------|---------|
-| `index.html` | Entry point, loads Tailwind + libs via CDN |
-| `main.js` | App bootstrap, wires components together |
+|------|----------|
+| `index.html` | Entry point (Vite HTML entry) |
+| `main.js` | App bootstrap, imports CSS, wires components |
+| `package.json` | NPM dependencies and scripts |
+| `vite.config.js` | Vite build configuration |
+| `tailwind.config.js` | Tailwind theme customization |
+| `postcss.config.js` | PostCSS plugins (Tailwind, Autoprefixer) |
+| `src/style.css` | Main CSS entry (Tailwind directives + imports) |
 | `src/config/constants.js` | App name, API URLs, storage keys |
 | `src/config/models.js` | AI model definitions (easy to add new) |
 | `src/repositories/BaseRepository.js` | Data access interface |
@@ -259,7 +293,9 @@ php -S localhost:3000
 ## 🔧 Adding Features
 
 ### Adding a New AI Model
+
 Edit `src/config/models.js`:
+
 ```javascript
 {
     id: 'provider/model-id',
@@ -271,12 +307,15 @@ Edit `src/config/models.js`:
 ```
 
 ### Adding a New Settings Tab
+
 1. Add tab button in `Settings.js` `_render()` method (in the `#settingsTabs` div)
 2. Add case in `_renderTabContent()` switch statement
 3. Add button handlers in `_bindTabButtons()` method
 
 ### Migrating to Neon Database
+
 1. Create `src/repositories/NeonRepository.js`:
+
 ```javascript
 import { BaseRepository } from './BaseRepository.js';
 import { neon } from '@neondatabase/serverless';
@@ -295,6 +334,7 @@ export class NeonRepository extends BaseRepository {
 ```
 
 2. Update `src/repositories/index.js`:
+
 ```javascript
 import { NeonRepository } from './NeonRepository.js';
 const REPOSITORY_TYPE = 'neon';
@@ -322,4 +362,3 @@ function createRepository() {
 ## 📞 Contact
 
 For questions about this project, reach out to the original developer or open an issue in the repository.
-
