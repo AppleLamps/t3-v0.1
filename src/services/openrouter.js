@@ -175,10 +175,9 @@ export class OpenRouterService {
      * @param {StreamCallbacks} callbacks - Streaming callbacks
      * @param {Object} [options] - Additional options
      * @param {Attachment[]} [attachments] - Attachments for the latest user message
-     * @param {number} [retryCount=0] - Current retry attempt (internal use)
      * @returns {Promise<void>}
      */
-    async chatStream(model, messages, callbacks, options = {}, attachments = [], retryCount = 0) {
+    async chatStream(model, messages, callbacks, options = {}, attachments = []) {
         const MAX_RETRIES = 3;
         const BASE_DELAY = 1000; // 1 second
 
@@ -219,200 +218,211 @@ export class OpenRouterService {
         // Check if this is an image generation model
         const isImageGenModel = IMAGE_GENERATION_MODELS.includes(model);
 
-        // Timing tracking
-        const startTime = performance.now();
-        let firstTokenTime = null;
-        let tokenCount = 0;
-        let usageStats = null;
-        let generatedImages = [];
-        let parseFailureCount = 0;
-        const MAX_PARSE_FAILURES = 10; // Track parse failures to detect issues
+        // Iterative retry loop (avoids recursion to prevent stack overflow)
+        let retryCount = 0;
+        while (retryCount <= MAX_RETRIES) {
+            // Timing tracking (reset on each attempt)
+            const startTime = performance.now();
+            let firstTokenTime = null;
+            let tokenCount = 0;
+            let usageStats = null;
+            let generatedImages = [];
+            let parseFailureCount = 0;
+            const MAX_PARSE_FAILURES = 10; // Track parse failures to detect issues
 
-        try {
-            const requestBody = {
-                model,
-                messages: processedMessages,
-                stream: true,
-                usage: { include: true },
-                ...options,
-            };
+            try {
+                const requestBody = {
+                    model,
+                    messages: processedMessages,
+                    stream: true,
+                    usage: { include: true },
+                    ...options,
+                };
 
-            // Add modalities for image generation models
-            if (isImageGenModel) {
-                requestBody.modalities = ['image', 'text'];
-            }
-
-            const response = await fetch(this.baseUrl, {
-                method: 'POST',
-                headers: this._getHeaders(),
-                body: JSON.stringify(requestBody),
-            });
-
-            if (!response.ok) {
-                const status = response.status;
-
-                // Retry on rate limit (429) or server errors (5xx)
-                if ((status === 429 || (status >= 500 && status < 600)) && retryCount < MAX_RETRIES) {
-                    const delay = BASE_DELAY * Math.pow(2, retryCount); // Exponential backoff
-                    console.log(`Retrying after ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    return this.chatStream(model, messages, callbacks, options, attachments, retryCount + 1);
+                // Add modalities for image generation models
+                if (isImageGenModel) {
+                    requestBody.modalities = ['image', 'text'];
                 }
 
-                // Non-retryable error or max retries reached
-                const error = await response.json().catch(() => ({ error: { message: `HTTP ${status}` } }));
-                throw new Error(error.error?.message || `API request failed: ${status}`);
-            }
+                const response = await fetch(this.baseUrl, {
+                    method: 'POST',
+                    headers: this._getHeaders(),
+                    body: JSON.stringify(requestBody),
+                });
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let fullContent = '';
-            let buffer = ''; // Accumulate incomplete lines
+                if (!response.ok) {
+                    const status = response.status;
 
-            while (true) {
-                const { done, value } = await reader.read();
+                    // Retry on rate limit (429) or server errors (5xx)
+                    if ((status === 429 || (status >= 500 && status < 600)) && retryCount < MAX_RETRIES) {
+                        const delay = BASE_DELAY * Math.pow(2, retryCount); // Exponential backoff
+                        console.log(`Retrying after ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
 
-                if (done) {
-                    // Process any remaining buffer
-                    if (buffer.trim()) {
-                        // Try to parse remaining buffer
-                        const lines = buffer.split('\n');
-                        for (const line of lines) {
-                            if (line.startsWith('data: ')) {
-                                const data = line.slice(6);
-                                if (data === '[DONE]') continue;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        retryCount++;
+                        continue; // Retry with next iteration
+                    }
 
-                                try {
-                                    const parsed = JSON.parse(data);
+                    // Non-retryable error or max retries reached
+                    const error = await response.json().catch(() => ({ error: { message: `HTTP ${status}` } }));
+                    throw new Error(error.error?.message || `API request failed: ${status}`);
+                }
 
-                                    // Check for usage stats
-                                    if (parsed.usage) {
-                                        usageStats = parsed.usage;
-                                    }
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let fullContent = '';
+                let buffer = ''; // Accumulate incomplete lines
 
-                                    // Handle text content
-                                    const content = parsed.choices?.[0]?.delta?.content || '';
-                                    if (content) {
-                                        if (firstTokenTime === null) {
-                                            firstTokenTime = performance.now();
+                while (true) {
+                    const { done, value } = await reader.read();
+
+                    if (done) {
+                        // Process any remaining buffer
+                        if (buffer.trim()) {
+                            // Try to parse remaining buffer
+                            const lines = buffer.split('\n');
+                            for (const line of lines) {
+                                if (line.startsWith('data: ')) {
+                                    const data = line.slice(6);
+                                    if (data === '[DONE]') continue;
+
+                                    try {
+                                        const parsed = JSON.parse(data);
+
+                                        // Check for usage stats
+                                        if (parsed.usage) {
+                                            usageStats = parsed.usage;
                                         }
-                                        tokenCount++;
-                                        fullContent += content;
-                                        callbacks.onToken(content);
-                                    }
 
-                                    // Handle generated images
-                                    const images = parsed.choices?.[0]?.delta?.images ||
-                                        parsed.choices?.[0]?.message?.images;
-                                    if (images && images.length > 0) {
-                                        for (const img of images) {
-                                            const imgUrl = img.image_url?.url || img.imageUrl?.url || img.url;
-                                            if (imgUrl) {
-                                                generatedImages.push({ url: imgUrl });
+                                        // Handle text content
+                                        const content = parsed.choices?.[0]?.delta?.content || '';
+                                        if (content) {
+                                            if (firstTokenTime === null) {
+                                                firstTokenTime = performance.now();
+                                            }
+                                            tokenCount++;
+                                            fullContent += content;
+                                            callbacks.onToken(content);
+                                        }
+
+                                        // Handle generated images
+                                        const images = parsed.choices?.[0]?.delta?.images ||
+                                            parsed.choices?.[0]?.message?.images;
+                                        if (images && images.length > 0) {
+                                            for (const img of images) {
+                                                const imgUrl = img.image_url?.url || img.imageUrl?.url || img.url;
+                                                if (imgUrl) {
+                                                    generatedImages.push({ url: imgUrl });
+                                                }
                                             }
                                         }
-                                    }
-                                } catch (e) {
-                                    parseFailureCount++;
-                                    if (parseFailureCount <= MAX_PARSE_FAILURES) {
-                                        console.warn('Failed to parse SSE data:', e, 'Data:', data);
+                                    } catch (e) {
+                                        parseFailureCount++;
+                                        if (parseFailureCount <= MAX_PARSE_FAILURES) {
+                                            console.warn('Failed to parse SSE data:', e, 'Data:', data);
+                                        }
                                     }
                                 }
                             }
                         }
+                        break;
                     }
-                    break;
-                }
 
-                const chunk = decoder.decode(value, { stream: true });
-                buffer += chunk;
+                    const chunk = decoder.decode(value, { stream: true });
+                    buffer += chunk;
 
-                // Split by newlines, keeping incomplete line in buffer
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || ''; // Keep last incomplete line in buffer
+                    // Split by newlines, keeping incomplete line in buffer
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // Keep last incomplete line in buffer
 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-                        if (data === '[DONE]') continue;
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') continue;
 
-                        try {
-                            const parsed = JSON.parse(data);
+                            try {
+                                const parsed = JSON.parse(data);
 
-                            // Check for usage stats (comes in final chunk)
-                            if (parsed.usage) {
-                                usageStats = parsed.usage;
-                            }
-
-                            // Handle text content
-                            const content = parsed.choices?.[0]?.delta?.content || '';
-                            if (content) {
-                                // Track first token time
-                                if (firstTokenTime === null) {
-                                    firstTokenTime = performance.now();
+                                // Check for usage stats (comes in final chunk)
+                                if (parsed.usage) {
+                                    usageStats = parsed.usage;
                                 }
-                                tokenCount++;
-                                fullContent += content;
-                                callbacks.onToken(content);
-                            }
 
-                            // Handle generated images (for image generation models)
-                            const images = parsed.choices?.[0]?.delta?.images ||
-                                parsed.choices?.[0]?.message?.images;
-                            if (images && images.length > 0) {
-                                for (const img of images) {
-                                    const imgUrl = img.image_url?.url || img.imageUrl?.url || img.url;
-                                    if (imgUrl) {
-                                        generatedImages.push({ url: imgUrl });
+                                // Handle text content
+                                const content = parsed.choices?.[0]?.delta?.content || '';
+                                if (content) {
+                                    // Track first token time
+                                    if (firstTokenTime === null) {
+                                        firstTokenTime = performance.now();
+                                    }
+                                    tokenCount++;
+                                    fullContent += content;
+                                    callbacks.onToken(content);
+                                }
+
+                                // Handle generated images (for image generation models)
+                                const images = parsed.choices?.[0]?.delta?.images ||
+                                    parsed.choices?.[0]?.message?.images;
+                                if (images && images.length > 0) {
+                                    for (const img of images) {
+                                        const imgUrl = img.image_url?.url || img.imageUrl?.url || img.url;
+                                        if (imgUrl) {
+                                            generatedImages.push({ url: imgUrl });
+                                        }
                                     }
                                 }
-                            }
-                        } catch (e) {
-                            parseFailureCount++;
-                            // Log parse errors (don't silently ignore)
-                            if (parseFailureCount <= MAX_PARSE_FAILURES) {
-                                console.warn('Failed to parse SSE data:', e, 'Data:', data);
+                            } catch (e) {
+                                parseFailureCount++;
+                                // Log parse errors (don't silently ignore)
+                                if (parseFailureCount <= MAX_PARSE_FAILURES) {
+                                    console.warn('Failed to parse SSE data:', e, 'Data:', data);
+                                }
                             }
                         }
                     }
                 }
+
+                // Report if too many parse failures occurred
+                if (parseFailureCount > MAX_PARSE_FAILURES) {
+                    console.warn(`Warning: ${parseFailureCount} parse failures occurred during streaming. Some data may be incomplete.`);
+                }
+
+                const endTime = performance.now();
+                const totalTimeMs = endTime - startTime;
+                const timeToFirstMs = firstTokenTime ? firstTokenTime - startTime : totalTimeMs;
+                const generationTimeMs = firstTokenTime ? endTime - firstTokenTime : totalTimeMs;
+
+                // Build stats object
+                const stats = {
+                    completionTokens: usageStats?.completion_tokens || tokenCount,
+                    promptTokens: usageStats?.prompt_tokens || 0,
+                    totalTokens: usageStats?.total_tokens || tokenCount,
+                    timeToFirstToken: timeToFirstMs / 1000,
+                    tokensPerSecond: generationTimeMs > 0 ? ((usageStats?.completion_tokens || tokenCount) / (generationTimeMs / 1000)) : 0,
+                    totalTime: totalTimeMs / 1000,
+                };
+
+                // Pass images in the completion callback
+                callbacks.onComplete(fullContent, stats, { images: generatedImages });
+                return; // Success - exit the retry loop
+
+            } catch (error) {
+                // Only retry network errors if we haven't exceeded retries
+                if (retryCount < MAX_RETRIES && error.name === 'TypeError' && error.message.includes('fetch')) {
+                    const delay = BASE_DELAY * Math.pow(2, retryCount);
+                    console.log(`Retrying network error after ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    retryCount++;
+                    continue; // Retry with next iteration
+                }
+
+                callbacks.onError(error);
+                return; // Exit on non-retryable error
             }
-
-            // Report if too many parse failures occurred
-            if (parseFailureCount > MAX_PARSE_FAILURES) {
-                console.warn(`Warning: ${parseFailureCount} parse failures occurred during streaming. Some data may be incomplete.`);
-            }
-
-            const endTime = performance.now();
-            const totalTimeMs = endTime - startTime;
-            const timeToFirstMs = firstTokenTime ? firstTokenTime - startTime : totalTimeMs;
-            const generationTimeMs = firstTokenTime ? endTime - firstTokenTime : totalTimeMs;
-
-            // Build stats object
-            const stats = {
-                completionTokens: usageStats?.completion_tokens || tokenCount,
-                promptTokens: usageStats?.prompt_tokens || 0,
-                totalTokens: usageStats?.total_tokens || tokenCount,
-                timeToFirstToken: timeToFirstMs / 1000,
-                tokensPerSecond: generationTimeMs > 0 ? ((usageStats?.completion_tokens || tokenCount) / (generationTimeMs / 1000)) : 0,
-                totalTime: totalTimeMs / 1000,
-            };
-
-            // Pass images in the completion callback
-            callbacks.onComplete(fullContent, stats, { images: generatedImages });
-
-        } catch (error) {
-            // Only retry network errors if we haven't exceeded retries
-            if (retryCount < MAX_RETRIES && error.name === 'TypeError' && error.message.includes('fetch')) {
-                const delay = BASE_DELAY * Math.pow(2, retryCount);
-                console.log(`Retrying network error after ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                return this.chatStream(model, messages, callbacks, options, attachments, retryCount + 1);
-            }
-
-            callbacks.onError(error);
         }
+
+        // This should only be reached if max retries exceeded without success
+        callbacks.onError(new Error(`Request failed after ${MAX_RETRIES} retries`));
     }
 
 

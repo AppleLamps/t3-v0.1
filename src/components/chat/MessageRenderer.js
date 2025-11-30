@@ -2,9 +2,44 @@
 // ===========================
 // Handles rendering of user/assistant messages including multimodal content, attachments, generated images, and stats
 
-import { escapeHtml } from '../../utils/dom.js';
+import DOMPurify from 'dompurify';
 import { renderMarkdown } from '../../utils/markdown.js';
 import { getModelById } from '../../config/models.js';
+
+/**
+ * Sanitize text content for safe HTML insertion
+ * Uses DOMPurify to prevent XSS attacks
+ * @param {string} text - Text to sanitize
+ * @returns {string} - Sanitized text
+ */
+function sanitizeText(text) {
+    // For plain text, we encode it as text content, then sanitize
+    // This handles the case where text might contain HTML-like strings
+    return DOMPurify.sanitize(text, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] });
+}
+
+/**
+ * Sanitize URL for safe use in src/href attributes
+ * @param {string} url - URL to sanitize
+ * @returns {string} - Sanitized URL or empty string if unsafe
+ */
+function sanitizeUrl(url) {
+    if (!url) return '';
+    // Only allow safe URL protocols
+    const safeProtocols = ['http:', 'https:', 'data:'];
+    try {
+        const parsed = new URL(url, window.location.origin);
+        if (safeProtocols.includes(parsed.protocol)) {
+            return url;
+        }
+    } catch {
+        // For data URLs that may not parse correctly, check manually
+        if (url.startsWith('data:image/') || url.startsWith('data:application/pdf')) {
+            return url;
+        }
+    }
+    return '';
+}
 
 /**
  * Message renderer class - handles rendering of messages
@@ -21,7 +56,7 @@ export class MessageRenderer {
 
         // If content is a string (legacy or no attachments)
         if (typeof content === 'string') {
-            let html = `<div class="message-content">${escapeHtml(content)}</div>`;
+            let html = `<div class="message-content">${sanitizeText(content)}</div>`;
             
             // Render attachments if present
             if (attachments.length > 0) {
@@ -38,7 +73,7 @@ export class MessageRenderer {
             // Render text content first
             const textParts = content.filter(item => item.type === 'text');
             if (textParts.length > 0) {
-                html += `<div class="message-content">${escapeHtml(textParts.map(p => p.text).join('\n'))}</div>`;
+                html += `<div class="message-content">${sanitizeText(textParts.map(p => p.text).join('\n'))}</div>`;
             }
             
             // Render images
@@ -46,14 +81,16 @@ export class MessageRenderer {
             if (imageParts.length > 0) {
                 html += '<div class="flex flex-wrap gap-2 mt-2">';
                 for (const img of imageParts) {
-                    const url = img.image_url?.url || '';
-                    html += `
-                        <div class="relative">
-                            <img src="${url}" alt="Attached image" 
-                                class="max-w-48 max-h-48 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                                onclick="window.open('${url}', '_blank')">
-                        </div>
-                    `;
+                    const url = sanitizeUrl(img.image_url?.url || '');
+                    if (url) {
+                        html += `
+                            <div class="relative">
+                                <img src="${url}" alt="Attached image" 
+                                    class="max-w-48 max-h-48 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                    data-image-url="${url}">
+                            </div>
+                        `;
+                    }
                 }
                 html += '</div>';
             }
@@ -63,13 +100,13 @@ export class MessageRenderer {
             if (fileParts.length > 0) {
                 html += '<div class="flex flex-wrap gap-2 mt-2">';
                 for (const file of fileParts) {
-                    const filename = file.file?.filename || 'Document.pdf';
+                    const filename = sanitizeText(file.file?.filename || 'Document.pdf');
                     html += `
                         <div class="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-lg">
                             <svg class="w-5 h-5 text-red-300" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4z"/>
                             </svg>
-                            <span class="text-sm">${escapeHtml(filename)}</span>
+                            <span class="text-sm">${filename}</span>
                         </div>
                     `;
                 }
@@ -94,20 +131,25 @@ export class MessageRenderer {
         
         for (const att of attachments) {
             if (att.type === 'image') {
-                html += `
-                    <div class="relative">
-                        <img src="${att.dataUrl}" alt="${escapeHtml(att.name)}" 
-                            class="max-w-48 max-h-48 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                            onclick="window.open('${att.dataUrl}', '_blank')">
-                    </div>
-                `;
+                const url = sanitizeUrl(att.dataUrl);
+                const name = sanitizeText(att.name);
+                if (url) {
+                    html += `
+                        <div class="relative">
+                            <img src="${url}" alt="${name}" 
+                                class="max-w-48 max-h-48 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                data-image-url="${url}">
+                        </div>
+                    `;
+                }
             } else if (att.type === 'pdf') {
+                const name = sanitizeText(att.name);
                 html += `
                     <div class="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-lg">
                         <svg class="w-5 h-5 text-red-300" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4z"/>
                         </svg>
-                        <span class="text-sm">${escapeHtml(att.name)}</span>
+                        <span class="text-sm">${name}</span>
                     </div>
                 `;
             }
@@ -125,7 +167,7 @@ export class MessageRenderer {
     renderAssistantMessageContent(msg) {
         let html = '';
         
-        // Render text content
+        // Render text content (renderMarkdown already uses DOMPurify)
         if (msg.content) {
             html += `<div class="message-content prose prose-sm max-w-none text-lamp-text">${renderMarkdown(msg.content)}</div>`;
         }
@@ -135,18 +177,17 @@ export class MessageRenderer {
         if (images.length > 0) {
             html += '<div class="flex flex-wrap gap-3 mt-4">';
             for (const img of images) {
-                const url = img.url || img.image_url?.url || '';
+                const url = sanitizeUrl(img.url || img.image_url?.url || '');
                 if (url) {
                     html += `
                         <div class="relative group/img">
                             <img src="${url}" alt="Generated image" 
                                 class="max-w-full rounded-xl shadow-lg cursor-pointer hover:shadow-xl transition-shadow"
                                 style="max-height: 400px;"
-                                onclick="window.open('${url}', '_blank')">
+                                data-image-url="${url}">
                             <div class="absolute bottom-2 right-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
                                 <a href="${url}" download="generated-image.png" 
-                                    class="flex items-center gap-1 px-2 py-1 bg-black/70 text-white text-xs rounded-lg hover:bg-black/90"
-                                    onclick="event.stopPropagation()">
+                                    class="flex items-center gap-1 px-2 py-1 bg-black/70 text-white text-xs rounded-lg hover:bg-black/90 download-btn">
                                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                                     </svg>

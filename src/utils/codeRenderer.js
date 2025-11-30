@@ -57,7 +57,7 @@ export function showCodeRenderer(code, lang) {
                 <iframe 
                     id="codeRendererIframe" 
                     class="w-full h-full border-0"
-                    sandbox="allow-scripts allow-same-origin"
+                    sandbox="allow-scripts"
                     title="Code preview">
                 </iframe>
             </div>

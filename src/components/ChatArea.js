@@ -194,12 +194,20 @@ export class ChatArea {
         this.elements.messagesContainer?.addEventListener('click', (e) => {
             const copyBtn = e.target.closest('[data-copy-msg]');
             const regenBtn = e.target.closest('[data-regen-msg]');
+            const imageEl = e.target.closest('[data-image-url]');
+            const downloadBtn = e.target.closest('.download-btn');
             
             if (copyBtn) {
                 this._copyMessage(copyBtn.dataset.copyMsg);
             } else if (regenBtn) {
                 if (this.onRegenerate) {
                     this.onRegenerate(regenBtn.dataset.regenMsg);
+                }
+            } else if (imageEl && !downloadBtn) {
+                // Open image in new tab (unless clicking download button)
+                const url = imageEl.dataset.imageUrl;
+                if (url) {
+                    window.open(url, '_blank');
                 }
             }
         });
