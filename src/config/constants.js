@@ -14,6 +14,8 @@ export const STORAGE_KEYS = {
     CHATS: 'lampchat_chats',
     SETTINGS: 'lampchat_settings',
     USER: 'lampchat_user',
+    AUTH_TOKEN: 'lampchat_auth_token',
+    AUTH_USER: 'lampchat_auth_user',
 };
 
 // UI Constants

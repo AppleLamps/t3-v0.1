@@ -2,6 +2,7 @@
 // =================
 
 import { stateManager } from '../services/state.js';
+import { authService } from '../services/auth.js';
 import { $, escapeHtml, setHtml } from '../utils/dom.js';
 import { groupByDate } from '../utils/date.js';
 import { APP_NAME, DATE_GROUPS } from '../config/constants.js';
@@ -17,6 +18,10 @@ export class Sidebar {
             searchInput: null,
             newChatBtn: null,
             userProfile: null,
+            authBtn: null,
+            authBtnText: null,
+            authBtnIcon: null,
+            syncStatus: null,
         };
         
         this._unsubscribers = [];
@@ -45,12 +50,25 @@ export class Sidebar {
      * @private
      */
     _render() {
+        const isLoggedIn = authService.isLoggedIn();
+        const user = authService.currentUser;
+        
         return `
             <aside id="sidebar" class="w-64 h-full bg-lamp-sidebar flex flex-col transition-all duration-300 ease-in-out overflow-hidden">
                 <!-- Logo & New Chat - Fixed Top -->
                 <div class="flex-shrink-0 p-3 pb-2">
                     <div class="flex items-center gap-2 mb-3">
                         <span class="text-base font-semibold tracking-tight text-lamp-text">${APP_NAME}</span>
+                        <!-- Sync Status Indicator -->
+                        <div id="syncStatus" class="ml-auto flex items-center gap-1.5 text-xs ${isLoggedIn ? 'text-emerald-600' : 'text-lamp-muted'}">
+                            ${isLoggedIn ? `
+                                <div class="w-2 h-2 bg-emerald-500 rounded-full"></div>
+                                <span>Synced</span>
+                            ` : `
+                                <div class="w-2 h-2 bg-amber-400 rounded-full"></div>
+                                <span>Local</span>
+                            `}
+                        </div>
                     </div>
                     <button id="newChatBtn" class="w-full bg-lamp-accent hover:bg-lamp-hover text-white py-2.5 px-4 rounded-xl font-medium transition-colors flex items-center justify-center gap-2">
                         New Chat
@@ -64,6 +82,7 @@ export class Sidebar {
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
                         </svg>
                         <input type="text" id="sidebarSearch" placeholder="Search your threads..." 
+                            autocomplete="off"
                             class="w-full bg-transparent py-2 pl-9 pr-3 text-sm placeholder:text-lamp-muted focus:outline-none transition-colors">
                     </div>
                 </div>
@@ -73,17 +92,35 @@ export class Sidebar {
                     <!-- Threads will be rendered here -->
                 </div>
                 
+                <!-- Auth Button - Above User Profile -->
+                <div class="flex-shrink-0 px-3 pt-2">
+                    <button id="authBtn" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-medium transition-colors ${
+                        isLoggedIn 
+                            ? 'bg-lamp-input hover:bg-red-50 text-lamp-muted hover:text-red-600 border border-lamp-border' 
+                            : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg shadow-orange-500/20'
+                    }">
+                        <svg id="authBtnIcon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            ${isLoggedIn ? `
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                            ` : `
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/>
+                            `}
+                        </svg>
+                        <span id="authBtnText">${isLoggedIn ? 'Sign Out' : 'Sign In'}</span>
+                    </button>
+                </div>
+                
                 <!-- User Profile / Settings - Fixed Bottom -->
                 <div class="flex-shrink-0 p-3 border-t border-lamp-border bg-lamp-sidebar">
                     <button id="userProfileBtn" class="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-lamp-card transition-colors">
-                        <div class="w-9 h-9 bg-gradient-to-br from-teal-400 to-emerald-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                            <span id="sidebarUserInitial">U</span>
+                        <div class="w-9 h-9 bg-gradient-to-br ${isLoggedIn ? 'from-emerald-400 to-teal-500' : 'from-teal-400 to-emerald-500'} rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                            <span id="sidebarUserInitial">${this._getUserInitial()}</span>
                         </div>
                         <div class="flex-1 text-left min-w-0">
-                            <div id="sidebarUserName" class="text-sm font-medium truncate">User</div>
-                            <div class="text-xs text-lamp-muted">Free</div>
+                            <div id="sidebarUserName" class="text-sm font-medium truncate">${this._getUserName()}</div>
+                            <div id="sidebarUserStatus" class="text-xs text-lamp-muted">${isLoggedIn ? user?.email || 'Signed In' : 'Local Mode'}</div>
                         </div>
-                        <svg class="w-5 h-5 text-lamp-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="w-5 h-5 text-lamp-muted flex-shrink-0 self-start mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                         </svg>
@@ -91,6 +128,26 @@ export class Sidebar {
                 </div>
             </aside>
         `;
+    }
+    
+    /**
+     * Get user's display name
+     * @private
+     */
+    _getUserName() {
+        if (authService.isLoggedIn()) {
+            return authService.currentUser?.name || authService.currentUser?.email?.split('@')[0] || 'User';
+        }
+        return stateManager.user?.name || 'User';
+    }
+    
+    /**
+     * Get user's initial
+     * @private
+     */
+    _getUserInitial() {
+        const name = this._getUserName();
+        return name.charAt(0).toUpperCase();
     }
     
     /**
@@ -105,6 +162,11 @@ export class Sidebar {
         this.elements.userProfile = $('userProfileBtn');
         this.elements.userName = $('sidebarUserName');
         this.elements.userInitial = $('sidebarUserInitial');
+        this.elements.userStatus = $('sidebarUserStatus');
+        this.elements.authBtn = $('authBtn');
+        this.elements.authBtnText = $('authBtnText');
+        this.elements.authBtnIcon = $('authBtnIcon');
+        this.elements.syncStatus = $('syncStatus');
     }
     
     /**
@@ -127,6 +189,11 @@ export class Sidebar {
             this._onSettingsClick();
         });
         
+        // Auth button
+        this.elements.authBtn?.addEventListener('click', () => {
+            this._onAuthClick();
+        });
+        
         // Thread list click delegation
         this.elements.threadList?.addEventListener('click', (e) => {
             const threadBtn = e.target.closest('[data-chat-id]');
@@ -138,6 +205,11 @@ export class Sidebar {
             } else if (threadBtn) {
                 this._onSelectChat(threadBtn.dataset.chatId);
             }
+        });
+        
+        // Subscribe to auth changes
+        authService.subscribe(() => {
+            this._updateAuthUI();
         });
     }
     
@@ -154,6 +226,49 @@ export class Sidebar {
             stateManager.subscribe('userUpdated', () => this._updateUserProfile()),
             stateManager.subscribe('sidebarToggled', (state, open) => this._toggleVisibility(open)),
         );
+    }
+    
+    /**
+     * Update auth-related UI elements
+     * @private
+     */
+    _updateAuthUI() {
+        const isLoggedIn = authService.isLoggedIn();
+        const user = authService.currentUser;
+        
+        // Update auth button
+        if (this.elements.authBtn) {
+            this.elements.authBtn.className = `w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-medium transition-colors ${
+                isLoggedIn 
+                    ? 'bg-lamp-input hover:bg-red-50 text-lamp-muted hover:text-red-600 border border-lamp-border' 
+                    : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-lg shadow-orange-500/20'
+            }`;
+        }
+        
+        if (this.elements.authBtnText) {
+            this.elements.authBtnText.textContent = isLoggedIn ? 'Sign Out' : 'Sign In';
+        }
+        
+        if (this.elements.authBtnIcon) {
+            this.elements.authBtnIcon.innerHTML = isLoggedIn 
+                ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>'
+                : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/>';
+        }
+        
+        // Update sync status
+        if (this.elements.syncStatus) {
+            this.elements.syncStatus.className = `ml-auto flex items-center gap-1.5 text-xs ${isLoggedIn ? 'text-emerald-600' : 'text-lamp-muted'}`;
+            this.elements.syncStatus.innerHTML = isLoggedIn 
+                ? '<div class="w-2 h-2 bg-emerald-500 rounded-full"></div><span>Synced</span>'
+                : '<div class="w-2 h-2 bg-amber-400 rounded-full"></div><span>Local</span>';
+        }
+        
+        // Update user profile
+        if (this.elements.userStatus) {
+            this.elements.userStatus.textContent = isLoggedIn ? (user?.email || 'Signed In') : 'Local Mode';
+        }
+        
+        this._updateUserProfile();
     }
     
     /**
@@ -214,8 +329,7 @@ export class Sidebar {
      * @private
      */
     _updateUserProfile() {
-        const user = stateManager.user;
-        const name = user?.name || 'User';
+        const name = this._getUserName();
         
         if (this.elements.userName) {
             this.elements.userName.textContent = name;
@@ -262,6 +376,10 @@ export class Sidebar {
         if (this.onSettingsClick) this.onSettingsClick();
     }
     
+    _onAuthClick() {
+        if (this.onAuthClick) this.onAuthClick();
+    }
+    
     /**
      * Set external event handlers
      * @param {Object} handlers 
@@ -272,6 +390,7 @@ export class Sidebar {
         this.onDeleteChat = handlers.onDeleteChat;
         this.onSearch = handlers.onSearch;
         this.onSettingsClick = handlers.onSettingsClick;
+        this.onAuthClick = handlers.onAuthClick;
     }
     
     /**
@@ -281,4 +400,3 @@ export class Sidebar {
         this._unsubscribers.forEach(unsub => unsub());
     }
 }
-

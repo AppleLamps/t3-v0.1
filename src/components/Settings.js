@@ -377,6 +377,7 @@ export class Settings {
                             <div class="relative">
                                 <input type="password" id="settingsApiKey" placeholder="sk-or-v1-..." 
                                     value="${settings?.apiKey || ''}"
+                                    autocomplete="off"
                                     class="w-full px-4 py-2.5 pr-12 bg-lamp-input border border-lamp-border rounded-lg focus:outline-none focus:border-lamp-accent transition-colors font-mono text-sm">
                                 <button type="button" id="toggleApiKeyBtn" class="absolute right-3 top-1/2 -translate-y-1/2 text-lamp-muted hover:text-lamp-text transition-colors">
                                     <svg id="eyeIcon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

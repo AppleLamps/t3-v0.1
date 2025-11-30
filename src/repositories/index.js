@@ -1,34 +1,78 @@
 // Repository Factory
 // ==================
 // This module exports the active repository implementation.
-// Change this when migrating to a different data store (e.g., Neon).
+// Dynamically selects between LocalStorage and Neon based on auth state.
 
 import { LocalStorageRepository } from './LocalStorageRepository.js';
-// Future: import { NeonRepository } from './NeonRepository.js';
+import { NeonRepository } from './NeonRepository.js';
+import { authService } from '../services/auth.js';
 
-// Repository type configuration
-// Change this to switch implementations
-const REPOSITORY_TYPE = 'localStorage'; // 'localStorage' | 'neon'
+// Cached repository instances
+let localStorageRepo = null;
+let neonRepo = null;
 
 /**
- * Create and return the appropriate repository instance
- * @returns {import('./BaseRepository.js').BaseRepository}
+ * Get the LocalStorage repository instance (singleton)
+ * @returns {LocalStorageRepository}
  */
-function createRepository() {
-    switch (REPOSITORY_TYPE) {
-        case 'localStorage':
-            return new LocalStorageRepository();
-        // Future: case 'neon':
-        //     return new NeonRepository(connectionConfig);
-        default:
-            return new LocalStorageRepository();
+function getLocalStorageRepository() {
+    if (!localStorageRepo) {
+        localStorageRepo = new LocalStorageRepository();
     }
+    return localStorageRepo;
 }
 
-// Singleton instance
-export const repository = createRepository();
+/**
+ * Get the Neon repository instance (singleton)
+ * @returns {NeonRepository}
+ */
+function getNeonRepository() {
+    if (!neonRepo) {
+        neonRepo = new NeonRepository();
+    }
+    return neonRepo;
+}
+
+/**
+ * Create and return the appropriate repository instance based on auth state
+ * @returns {import('./BaseRepository.js').BaseRepository}
+ */
+export function createRepository() {
+    if (authService.isLoggedIn()) {
+        return getNeonRepository();
+    }
+    return getLocalStorageRepository();
+}
+
+/**
+ * Get the current repository based on auth state
+ * This is a dynamic getter that returns the appropriate repository
+ * @returns {import('./BaseRepository.js').BaseRepository}
+ */
+export function getRepository() {
+    return createRepository();
+}
+
+// Create a proxy object that dynamically delegates to the correct repository
+// This allows the repository to switch transparently when auth state changes
+const repositoryProxy = new Proxy({}, {
+    get(target, prop) {
+        const repo = getRepository();
+        const value = repo[prop];
+        
+        // If it's a function, bind it to the repository instance
+        if (typeof value === 'function') {
+            return value.bind(repo);
+        }
+        
+        return value;
+    }
+});
+
+// Export the dynamic proxy as the main repository
+export const repository = repositoryProxy;
 
 // Re-export base types for use elsewhere
 export { BaseRepository } from './BaseRepository.js';
 export { LocalStorageRepository } from './LocalStorageRepository.js';
-
+export { NeonRepository } from './NeonRepository.js';

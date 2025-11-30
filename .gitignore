@@ -91,3 +91,4 @@ secrets.json
 *.bak
 *.backup
 
+.vercel

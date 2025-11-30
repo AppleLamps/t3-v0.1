@@ -139,6 +139,11 @@ class StateManager {
             messages: [],
         });
         
+        if (!chat || !chat.id) {
+            console.error('Failed to create chat');
+            throw new Error('Failed to create chat');
+        }
+        
         this.state.chats[chat.id] = chat;
         this.state.currentChatId = chat.id;
         
@@ -168,6 +173,8 @@ class StateManager {
         if (!this.state.currentChatId) return null;
         
         const chat = await repository.updateChat(this.state.currentChatId, updates);
+        if (!chat) return null;
+        
         this.state.chats[chat.id] = chat;
         
         this._notify('chatUpdated', chat);
@@ -206,9 +213,14 @@ class StateManager {
         if (!this.state.currentChatId) return null;
         
         const message = await repository.addMessage(this.state.currentChatId, messageData);
+        if (!message) return null;
         
         // Refresh chat from repo to get updated messages
         const chat = await repository.getChatById(this.state.currentChatId);
+        if (!chat) {
+            console.error('Failed to refresh chat after adding message');
+            return message; // Return the message even if refresh failed
+        }
         this.state.chats[chat.id] = chat;
         
         // Auto-generate title from first user message
@@ -231,9 +243,14 @@ class StateManager {
         if (!this.state.currentChatId) return null;
         
         const message = await repository.updateMessage(this.state.currentChatId, messageId, updates);
+        if (!message) return null;
         
         // Refresh chat
         const chat = await repository.getChatById(this.state.currentChatId);
+        if (!chat) {
+            console.error('Failed to refresh chat after updating message');
+            return message;
+        }
         this.state.chats[chat.id] = chat;
         
         this._notify('messageUpdated', { chat, message });
