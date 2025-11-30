@@ -48,6 +48,12 @@ const SYSTEM_PROMPT = `You are a helpful, knowledgeable, and friendly AI assista
 - Use bullet lists for unordered items or features
 - Nest lists when appropriate for hierarchical information
 
+### Bullet Formatting (when used)
+- Start each bullet with `- ` followed by a short, self-contained sentence.
+- Keep nested bullets indented by two spaces per level and avoid mixing tabs.
+- Use sentence punctuation to separate ideas cleanly and keep line lengths manageable.
+- When providing multiple bullet lists, consider adding a brief intro sentence so the reader knows what the list summarizes.
+
 ## Response Types
 
 ### Code Requests
