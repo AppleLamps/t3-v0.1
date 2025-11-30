@@ -1,0 +1,286 @@
+// Sidebar Component
+// =================
+
+import { stateManager } from '../services/state.js';
+import { $, escapeHtml, setHtml } from '../utils/dom.js';
+import { groupByDate } from '../utils/date.js';
+import { APP_NAME, DATE_GROUPS } from '../config/constants.js';
+
+/**
+ * Sidebar component - handles chat list and navigation
+ */
+export class Sidebar {
+    constructor() {
+        this.elements = {
+            sidebar: null,
+            threadList: null,
+            searchInput: null,
+            newChatBtn: null,
+            userProfile: null,
+        };
+        
+        this._unsubscribers = [];
+    }
+    
+    /**
+     * Initialize the sidebar
+     * @param {string} containerId - Container element ID
+     */
+    init(containerId) {
+        const container = $(containerId);
+        if (!container) {
+            console.error('Sidebar container not found');
+            return;
+        }
+        
+        container.innerHTML = this._render();
+        this._cacheElements();
+        this._bindEvents();
+        this._subscribeToState();
+        this.refresh();
+    }
+    
+    /**
+     * Render sidebar HTML
+     * @private
+     */
+    _render() {
+        return `
+            <aside id="sidebar" class="w-72 h-full bg-lamp-sidebar border-r border-lamp-border flex flex-col sidebar-transition">
+                <!-- Logo & New Chat - Fixed Top -->
+                <div class="flex-shrink-0 p-4 border-b border-lamp-border">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-9 h-9 bg-lamp-accent rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                            </svg>
+                        </div>
+                        <span class="text-lg font-semibold tracking-tight">${APP_NAME}</span>
+                    </div>
+                    <button id="newChatBtn" class="w-full bg-lamp-accent hover:bg-lamp-hover text-white py-2.5 px-4 rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        New Chat
+                    </button>
+                </div>
+                
+                <!-- Search - Fixed -->
+                <div class="flex-shrink-0 p-4 pb-2">
+                    <div class="relative">
+                        <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <input type="text" id="sidebarSearch" placeholder="Search your threads..." 
+                            class="w-full bg-lamp-card border border-lamp-border rounded-lg py-2 pl-10 pr-4 text-sm placeholder:text-lamp-muted focus:outline-none focus:border-lamp-accent transition-colors">
+                    </div>
+                </div>
+                
+                <!-- Thread List - Scrollable Middle Section -->
+                <div id="threadList" class="flex-1 overflow-y-auto px-2 py-2 min-h-0">
+                    <!-- Threads will be rendered here -->
+                </div>
+                
+                <!-- User Profile / Settings - Fixed Bottom -->
+                <div class="flex-shrink-0 p-4 border-t border-lamp-border bg-lamp-sidebar">
+                    <button id="userProfileBtn" class="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-lamp-card transition-colors">
+                        <div class="w-10 h-10 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                            <span id="sidebarUserInitial">U</span>
+                        </div>
+                        <div class="flex-1 text-left min-w-0">
+                            <div id="sidebarUserName" class="text-sm font-semibold truncate">User</div>
+                            <div class="text-xs text-lamp-muted">Free</div>
+                        </div>
+                        <svg class="w-5 h-5 text-lamp-muted flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </button>
+                </div>
+            </aside>
+        `;
+    }
+    
+    /**
+     * Cache element references
+     * @private
+     */
+    _cacheElements() {
+        this.elements.sidebar = $('sidebar');
+        this.elements.threadList = $('threadList');
+        this.elements.searchInput = $('sidebarSearch');
+        this.elements.newChatBtn = $('newChatBtn');
+        this.elements.userProfile = $('userProfileBtn');
+        this.elements.userName = $('sidebarUserName');
+        this.elements.userInitial = $('sidebarUserInitial');
+    }
+    
+    /**
+     * Bind event handlers
+     * @private
+     */
+    _bindEvents() {
+        // New chat button
+        this.elements.newChatBtn?.addEventListener('click', () => {
+            this._onNewChat();
+        });
+        
+        // Search input
+        this.elements.searchInput?.addEventListener('input', (e) => {
+            this._onSearch(e.target.value);
+        });
+        
+        // User profile button
+        this.elements.userProfile?.addEventListener('click', () => {
+            this._onSettingsClick();
+        });
+        
+        // Thread list click delegation
+        this.elements.threadList?.addEventListener('click', (e) => {
+            const threadBtn = e.target.closest('[data-chat-id]');
+            const deleteBtn = e.target.closest('[data-delete-id]');
+            
+            if (deleteBtn) {
+                e.stopPropagation();
+                this._onDeleteChat(deleteBtn.dataset.deleteId);
+            } else if (threadBtn) {
+                this._onSelectChat(threadBtn.dataset.chatId);
+            }
+        });
+    }
+    
+    /**
+     * Subscribe to state changes
+     * @private
+     */
+    _subscribeToState() {
+        this._unsubscribers.push(
+            stateManager.subscribe('chatCreated', () => this.renderThreads()),
+            stateManager.subscribe('chatUpdated', () => this.renderThreads()),
+            stateManager.subscribe('chatDeleted', () => this.renderThreads()),
+            stateManager.subscribe('currentChatChanged', () => this.renderThreads()),
+            stateManager.subscribe('userUpdated', () => this._updateUserProfile()),
+            stateManager.subscribe('sidebarToggled', (state, open) => this._toggleVisibility(open)),
+        );
+    }
+    
+    /**
+     * Refresh sidebar content
+     */
+    refresh() {
+        this.renderThreads();
+        this._updateUserProfile();
+    }
+    
+    /**
+     * Render thread list
+     */
+    renderThreads() {
+        const chats = stateManager.allChats;
+        const groups = groupByDate(chats);
+        const currentChatId = stateManager.currentChat?.id;
+        
+        let html = '';
+        
+        const renderGroup = (title, chats) => {
+            if (chats.length === 0) return '';
+            let groupHtml = `<div class="mb-4"><div class="px-3 py-1 text-xs font-medium text-lamp-muted uppercase tracking-wide">${title}</div>`;
+            
+            for (const chat of chats) {
+                const isActive = chat.id === currentChatId;
+                groupHtml += `
+                    <div class="thread-item group relative">
+                        <button data-chat-id="${chat.id}" 
+                            class="w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${isActive ? 'bg-lamp-card border border-lamp-border' : 'hover:bg-lamp-card'}">
+                            ${escapeHtml(chat.title)}
+                        </button>
+                        <div class="thread-actions absolute right-2 top-1/2 -translate-y-1/2 flex gap-1">
+                            <button data-delete-id="${chat.id}" class="p-1 hover:bg-lamp-input rounded transition-colors" title="Delete">
+                                <svg class="w-4 h-4 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            groupHtml += '</div>';
+            return groupHtml;
+        };
+        
+        html += renderGroup(DATE_GROUPS.TODAY, groups[DATE_GROUPS.TODAY]);
+        html += renderGroup(DATE_GROUPS.YESTERDAY, groups[DATE_GROUPS.YESTERDAY]);
+        html += renderGroup(DATE_GROUPS.LAST_WEEK, groups[DATE_GROUPS.LAST_WEEK]);
+        html += renderGroup(DATE_GROUPS.OLDER, groups[DATE_GROUPS.OLDER]);
+        
+        setHtml(this.elements.threadList, html || '<div class="px-3 py-8 text-center text-sm text-lamp-muted">No chats yet</div>');
+    }
+    
+    /**
+     * Update user profile display
+     * @private
+     */
+    _updateUserProfile() {
+        const user = stateManager.user;
+        const name = user?.name || 'User';
+        
+        if (this.elements.userName) {
+            this.elements.userName.textContent = name;
+        }
+        if (this.elements.userInitial) {
+            this.elements.userInitial.textContent = name.charAt(0).toUpperCase();
+        }
+    }
+    
+    /**
+     * Toggle sidebar visibility
+     * @private
+     */
+    _toggleVisibility(open) {
+        if (this.elements.sidebar) {
+            this.elements.sidebar.classList.toggle('-translate-x-full', !open);
+        }
+    }
+    
+    // Event handlers - these will be connected to external handlers
+    _onNewChat() {
+        if (this.onNewChat) this.onNewChat();
+    }
+    
+    _onSelectChat(chatId) {
+        if (this.onSelectChat) this.onSelectChat(chatId);
+    }
+    
+    _onDeleteChat(chatId) {
+        if (this.onDeleteChat) this.onDeleteChat(chatId);
+    }
+    
+    _onSearch(query) {
+        if (this.onSearch) this.onSearch(query);
+    }
+    
+    _onSettingsClick() {
+        if (this.onSettingsClick) this.onSettingsClick();
+    }
+    
+    /**
+     * Set external event handlers
+     * @param {Object} handlers 
+     */
+    setHandlers(handlers) {
+        this.onNewChat = handlers.onNewChat;
+        this.onSelectChat = handlers.onSelectChat;
+        this.onDeleteChat = handlers.onDeleteChat;
+        this.onSearch = handlers.onSearch;
+        this.onSettingsClick = handlers.onSettingsClick;
+    }
+    
+    /**
+     * Cleanup
+     */
+    destroy() {
+        this._unsubscribers.forEach(unsub => unsub());
+    }
+}
+

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LampChat</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Code Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
+    <!-- Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- Tailwind Config -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['DM Sans', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        lamp: {
+                            bg: '#FAFAF8',
+                            sidebar: '#F3F2EF',
+                            card: '#FFFFFF',
+                            border: '#E8E6E1',
+                            text: '#1A1A1A',
+                            muted: '#6B6B6B',
+                            accent: '#1A1A1A',
+                            hover: '#2A2A2A',
+                            input: '#F7F7F5',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="src/styles/main.css">
+</head>
+<body class="bg-lamp-bg text-lamp-text font-sans antialiased">
+    <!-- App Root -->
+    <div id="app" class="flex h-screen overflow-hidden">
+        <!-- Sidebar Container -->
+        <div id="sidebarContainer"></div>
+        
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col min-w-0">
+            <!-- Chat Container -->
+            <div id="chatContainer" class="flex-1 flex flex-col min-h-0"></div>
+            
+            <!-- Input Container -->
+            <div id="inputContainer"></div>
+        </main>
+    </div>
+    
+    <!-- Settings Modal Container -->
+    <div id="settingsContainer"></div>
+    
+    <!-- Main Application Script -->
+    <script type="module" src="main.js"></script>
+</body>
+</html>
+

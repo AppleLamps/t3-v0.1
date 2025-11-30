@@ -1,0 +1,6 @@
+// Components barrel export
+export { Sidebar } from './Sidebar.js';
+export { ChatArea } from './ChatArea.js';
+export { MessageInput } from './MessageInput.js';
+export { Settings } from './Settings.js';
+
