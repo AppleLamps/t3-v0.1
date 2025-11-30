@@ -8,6 +8,7 @@ import { stateManager, getOpenRouterService } from './src/services/index.js';
 import { Sidebar, ChatArea, MessageInput, Settings } from './src/components/index.js';
 import { configureMarked } from './src/utils/markdown.js';
 import { showConfirm } from './src/utils/dom.js';
+import { isImageGenerationModel } from './src/config/models.js';
 
 /**
  * Main application class
@@ -103,9 +104,9 @@ class LampChat {
             onRegenerate: (messageId) => this._regenerateResponse(messageId),
         });
 
-        // Message input handlers
+        // Message input handlers - now receives both message and attachments
         this.messageInput.setHandlers({
-            onSubmit: (message) => this._sendMessage(message),
+            onSubmit: (message, attachments) => this._sendMessage(message, attachments),
         });
     }
 
@@ -176,7 +177,7 @@ class LampChat {
         // Get messages up to (but not including) this assistant message
         const messagesForContext = chat.messages.slice(0, msgIndex).map(m => ({
             role: m.role,
-            content: m.content,
+            content: typeof m.content === 'string' ? m.content : this._extractTextContent(m.content),
         }));
         
         if (messagesForContext.length === 0) return;
@@ -187,13 +188,15 @@ class LampChat {
             stateManager.setStreaming(true);
             
             // Clear the existing message content
-            await stateManager.updateMessage(messageId, { content: '', stats: null });
+            await stateManager.updateMessage(messageId, { content: '', stats: null, generatedImages: null });
             
             let streamedContent = '';
             const settings = stateManager.settings;
+            const selectedModel = settings.selectedModel;
+            const isImageGen = isImageGenerationModel(selectedModel);
             
             await this.openRouter.chatStream(
-                settings.selectedModel,
+                selectedModel,
                 messagesForContext,
                 {
                     onToken: async (token) => {
@@ -202,20 +205,27 @@ class LampChat {
                             content: streamedContent,
                         });
                     },
-                    onComplete: async (fullContent, stats) => {
+                    onComplete: async (fullContent, stats, extra) => {
                         this.chatArea.hideTypingIndicator();
                         stateManager.setStreaming(false);
                         
-                        await stateManager.updateMessage(messageId, {
+                        const updateData = {
                             content: fullContent,
                             stats: {
-                                model: settings.selectedModel,
+                                model: selectedModel,
                                 completionTokens: stats.completionTokens,
                                 promptTokens: stats.promptTokens,
                                 tokensPerSecond: stats.tokensPerSecond,
                                 timeToFirstToken: stats.timeToFirstToken,
                             },
-                        });
+                        };
+
+                        // Add generated images if present
+                        if (extra?.images && extra.images.length > 0) {
+                            updateData.generatedImages = extra.images;
+                        }
+                        
+                        await stateManager.updateMessage(messageId, updateData);
                     },
                     onError: async (error) => {
                         console.error('Regenerate error:', error);
@@ -236,11 +246,31 @@ class LampChat {
     }
 
     /**
+     * Extract text content from multimodal content
+     * @private
+     * @param {string|Array} content
+     * @returns {string}
+     */
+    _extractTextContent(content) {
+        if (typeof content === 'string') return content;
+        if (Array.isArray(content)) {
+            return content
+                .filter(item => item.type === 'text')
+                .map(item => item.text)
+                .join('\n');
+        }
+        return '';
+    }
+
+    /**
      * Send a message
      * @private
+     * @param {string} message - The text message
+     * @param {Array} attachments - File attachments
      */
-    async _sendMessage(message) {
-        if (!message.trim()) return;
+    async _sendMessage(message, attachments = []) {
+        // Allow sending if there's a message OR attachments
+        if (!message.trim() && attachments.length === 0) return;
 
         // Check for API key
         if (!this.openRouter.hasApiKey()) {
@@ -249,12 +279,28 @@ class LampChat {
             return;
         }
 
+        const settings = stateManager.settings;
+        const selectedModel = settings.selectedModel;
+        const isImageGen = isImageGenerationModel(selectedModel);
+
         try {
-            // Add user message
-            await stateManager.addMessage({
+            // Build user message content
+            // For storage, we store both the text and attachment references
+            const userMessageData = {
                 role: 'user',
                 content: message,
-            });
+                attachments: attachments.map(att => ({
+                    id: att.id,
+                    name: att.name,
+                    type: att.type,
+                    mimeType: att.mimeType,
+                    size: att.size,
+                    dataUrl: att.dataUrl,
+                })),
+            };
+
+            // Add user message
+            await stateManager.addMessage(userMessageData);
 
             // Show typing indicator
             this.chatArea.showTypingIndicator();
@@ -270,53 +316,94 @@ class LampChat {
             const chat = stateManager.currentChat;
             const messages = chat.messages.slice(0, -1).map(m => ({
                 role: m.role,
-                content: m.content,
+                content: typeof m.content === 'string' ? m.content : this._extractTextContent(m.content),
             }));
 
-            // Stream response
-            const settings = stateManager.settings;
-            
-            // Use local accumulator to avoid race condition with state updates
-            let streamedContent = '';
+            // Use different approach for image generation vs chat
+            if (isImageGen) {
+                // Use non-streaming image generation for better compatibility
+                try {
+                    const result = await this.openRouter.generateImage(message, selectedModel);
+                    
+                    this.chatArea.hideTypingIndicator();
+                    stateManager.setStreaming(false);
+                    
+                    // Build update data
+                    const updateData = {
+                        content: result.text || 'Image generated successfully.',
+                        stats: {
+                            model: selectedModel,
+                        },
+                    };
 
-            await this.openRouter.chatStream(
-                settings.selectedModel,
-                messages,
-                {
-                    onToken: async (token) => {
-                        // Accumulate locally to avoid race condition
-                        streamedContent += token;
-                        await stateManager.updateMessage(assistantMsg.id, {
-                            content: streamedContent,
-                        });
-                    },
-                    onComplete: async (fullContent, stats) => {
+                    // Add generated images
+                    if (result.images && result.images.length > 0) {
+                        updateData.generatedImages = result.images;
+                    }
+                    
+                    await stateManager.updateMessage(assistantMsg.id, updateData);
+                } catch (error) {
+                    console.error('Image generation error:', error);
+                    this.chatArea.hideTypingIndicator();
+                    stateManager.setStreaming(false);
+                    
+                    await stateManager.updateMessage(assistantMsg.id, {
+                        content: `Error: ${error.message}`,
+                    });
+                }
+            } else {
+                // Stream response for regular chat
+                // Use local accumulator to avoid race condition with state updates
+                let streamedContent = '';
+
+                await this.openRouter.chatStream(
+                    selectedModel,
+                    messages,
+                    {
+                        onToken: async (token) => {
+                            // Accumulate locally to avoid race condition
+                            streamedContent += token;
+                            await stateManager.updateMessage(assistantMsg.id, {
+                                content: streamedContent,
+                            });
+                        },
+                    onComplete: async (fullContent, stats, extra) => {
                         this.chatArea.hideTypingIndicator();
                         stateManager.setStreaming(false);
                         
-                        // Save stats with the message
-                        await stateManager.updateMessage(assistantMsg.id, {
+                        // Build update data
+                        const updateData = {
                             content: fullContent,
                             stats: {
-                                model: settings.selectedModel,
+                                model: selectedModel,
                                 completionTokens: stats.completionTokens,
                                 promptTokens: stats.promptTokens,
                                 tokensPerSecond: stats.tokensPerSecond,
                                 timeToFirstToken: stats.timeToFirstToken,
                             },
-                        });
-                    },
-                    onError: async (error) => {
-                        console.error('Stream error:', error);
-                        this.chatArea.hideTypingIndicator();
-                        stateManager.setStreaming(false);
+                        };
 
-                        await stateManager.updateMessage(assistantMsg.id, {
-                            content: `Error: ${error.message}`,
-                        });
+                        // Add generated images if present (from image generation models)
+                        if (extra?.images && extra.images.length > 0) {
+                            updateData.generatedImages = extra.images;
+                        }
+                        
+                        await stateManager.updateMessage(assistantMsg.id, updateData);
                     },
-                }
-            );
+                        onError: async (error) => {
+                            console.error('Stream error:', error);
+                            this.chatArea.hideTypingIndicator();
+                            stateManager.setStreaming(false);
+
+                            await stateManager.updateMessage(assistantMsg.id, {
+                                content: `Error: ${error.message}`,
+                            });
+                        },
+                    },
+                    {},
+                    attachments // Pass attachments to the service
+                );
+            }
 
         } catch (error) {
             console.error('Send message error:', error);
@@ -335,4 +422,3 @@ document.addEventListener('DOMContentLoaded', () => {
     // Expose for debugging
     window.lampChat = app;
 });
-

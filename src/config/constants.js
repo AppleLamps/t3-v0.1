@@ -6,6 +6,7 @@ export const APP_VERSION = '1.0.0';
 
 // API Configuration
 export const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+export const OPENROUTER_IMAGE_GEN_URL = 'https://openrouter.ai/api/v1/images/generations';
 
 // Storage Keys (for localStorage, will map to table names for DB)
 export const STORAGE_KEYS = {

@@ -5,6 +5,7 @@ import { stateManager } from '../services/state.js';
 import { $, escapeHtml, setHtml, scrollToBottom } from '../utils/dom.js';
 import { renderMarkdown, processMessageContent } from '../utils/markdown.js';
 import { getModelById } from '../config/models.js';
+import { formatFileSize } from '../utils/files.js';
 
 /**
  * Chat area component - displays messages and welcome screen
@@ -208,8 +209,11 @@ export class ChatArea {
         const msg = chat.messages.find(m => m.id === messageId);
         if (!msg) return;
         
+        // Get text content (handle both string and multimodal array)
+        const textContent = this._extractTextContent(msg.content);
+        
         try {
-            await navigator.clipboard.writeText(msg.content);
+            await navigator.clipboard.writeText(textContent);
             // Show brief feedback
             const btn = document.querySelector(`[data-copy-msg="${messageId}"]`);
             if (btn) {
@@ -220,6 +224,25 @@ export class ChatArea {
         } catch (err) {
             console.error('Copy failed:', err);
         }
+    }
+
+    /**
+     * Extract text content from message content (handles string or multimodal array)
+     * @private
+     * @param {string|Array} content
+     * @returns {string}
+     */
+    _extractTextContent(content) {
+        if (typeof content === 'string') {
+            return content;
+        }
+        if (Array.isArray(content)) {
+            return content
+                .filter(item => item.type === 'text')
+                .map(item => item.text)
+                .join('\n');
+        }
+        return '';
     }
     
     /**
@@ -323,6 +346,162 @@ export class ChatArea {
             this.elements.welcomeName.textContent = user?.name ? `, ${user.name}` : '';
         }
     }
+
+    /**
+     * Render user message content (handles multimodal)
+     * @private
+     * @param {Object} msg - The message object
+     * @returns {string} - HTML string
+     */
+    _renderUserMessageContent(msg) {
+        const content = msg.content;
+        const attachments = msg.attachments || [];
+
+        // If content is a string (legacy or no attachments)
+        if (typeof content === 'string') {
+            let html = `<div class="message-content">${escapeHtml(content)}</div>`;
+            
+            // Render attachments if present
+            if (attachments.length > 0) {
+                html += this._renderUserAttachments(attachments);
+            }
+            
+            return html;
+        }
+
+        // If content is multimodal array
+        if (Array.isArray(content)) {
+            let html = '';
+            
+            // Render text content first
+            const textParts = content.filter(item => item.type === 'text');
+            if (textParts.length > 0) {
+                html += `<div class="message-content">${escapeHtml(textParts.map(p => p.text).join('\n'))}</div>`;
+            }
+            
+            // Render images
+            const imageParts = content.filter(item => item.type === 'image_url');
+            if (imageParts.length > 0) {
+                html += '<div class="flex flex-wrap gap-2 mt-2">';
+                for (const img of imageParts) {
+                    const url = img.image_url?.url || '';
+                    html += `
+                        <div class="relative">
+                            <img src="${url}" alt="Attached image" 
+                                class="max-w-48 max-h-48 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                onclick="window.open('${url}', '_blank')">
+                        </div>
+                    `;
+                }
+                html += '</div>';
+            }
+
+            // Render PDF files
+            const fileParts = content.filter(item => item.type === 'file');
+            if (fileParts.length > 0) {
+                html += '<div class="flex flex-wrap gap-2 mt-2">';
+                for (const file of fileParts) {
+                    const filename = file.file?.filename || 'Document.pdf';
+                    html += `
+                        <div class="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-lg">
+                            <svg class="w-5 h-5 text-red-300" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4z"/>
+                            </svg>
+                            <span class="text-sm">${escapeHtml(filename)}</span>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+            }
+            
+            return html;
+        }
+
+        return '';
+    }
+
+    /**
+     * Render user attachments
+     * @private
+     * @param {Array} attachments
+     * @returns {string} - HTML string
+     */
+    _renderUserAttachments(attachments) {
+        if (!attachments || attachments.length === 0) return '';
+
+        let html = '<div class="flex flex-wrap gap-2 mt-2">';
+        
+        for (const att of attachments) {
+            if (att.type === 'image') {
+                html += `
+                    <div class="relative">
+                        <img src="${att.dataUrl}" alt="${escapeHtml(att.name)}" 
+                            class="max-w-48 max-h-48 rounded-lg object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                            onclick="window.open('${att.dataUrl}', '_blank')">
+                    </div>
+                `;
+            } else if (att.type === 'pdf') {
+                html += `
+                    <div class="flex items-center gap-2 px-3 py-2 bg-white/20 rounded-lg">
+                        <svg class="w-5 h-5 text-red-300" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4z"/>
+                        </svg>
+                        <span class="text-sm">${escapeHtml(att.name)}</span>
+                    </div>
+                `;
+            }
+        }
+        
+        html += '</div>';
+        return html;
+    }
+
+    /**
+     * Render assistant message content (handles generated images)
+     * @private
+     * @param {Object} msg - The message object
+     * @returns {string} - HTML string
+     */
+    _renderAssistantMessageContent(msg) {
+        let html = '';
+        
+        // Render text content
+        if (msg.content) {
+            html += `<div class="message-content prose prose-sm max-w-none text-lamp-text">${renderMarkdown(msg.content)}</div>`;
+        }
+        
+        // Render generated images
+        const images = msg.generatedImages || msg.images || [];
+        if (images.length > 0) {
+            html += '<div class="flex flex-wrap gap-3 mt-4">';
+            for (const img of images) {
+                const url = img.url || img.image_url?.url || '';
+                if (url) {
+                    html += `
+                        <div class="relative group/img">
+                            <img src="${url}" alt="Generated image" 
+                                class="max-w-full rounded-xl shadow-lg cursor-pointer hover:shadow-xl transition-shadow"
+                                style="max-height: 400px;"
+                                onclick="window.open('${url}', '_blank')">
+                            <div class="absolute bottom-2 right-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
+                                <a href="${url}" download="generated-image.png" 
+                                    class="flex items-center gap-1 px-2 py-1 bg-black/70 text-white text-xs rounded-lg hover:bg-black/90"
+                                    onclick="event.stopPropagation()">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                    </svg>
+                                    Download
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            html += '</div>';
+        }
+        
+        return html;
+    }
     
     /**
      * Render messages
@@ -354,7 +533,7 @@ export class ChatArea {
                 html += `
                     <div class="flex animate-fade-in justify-end">
                         <div class="bg-lamp-accent text-white rounded-2xl px-4 py-2.5 max-w-[80%]">
-                            <div class="message-content">${escapeHtml(msg.content)}</div>
+                            ${this._renderUserMessageContent(msg)}
                         </div>
                     </div>
                 `;
@@ -369,7 +548,7 @@ export class ChatArea {
                 html += `
                     <div class="group flex flex-col animate-fade-in">
                         <div class="max-w-[80%]">
-                            <div class="message-content prose prose-sm max-w-none text-lamp-text">${renderMarkdown(msg.content)}</div>
+                            ${this._renderAssistantMessageContent(msg)}
                         </div>
                         <div class="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                             <button data-copy-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Copy">
@@ -493,4 +672,3 @@ export class ChatArea {
         this._unsubscribers.forEach(unsub => unsub());
     }
 }
-

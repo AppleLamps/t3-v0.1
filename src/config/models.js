@@ -115,18 +115,11 @@ export const MODELS = [
 
     // Google - Image generation
     {
-        id: 'google/gemini-3-pro-image-preview',
-        name: 'Gemini 3 Pro Image (Preview)',
+        id: 'google/gemini-2.5-flash-preview-image-generation',
+        name: 'Gemini 2.5 Flash Image (Preview)',
         provider: 'Google',
-        capabilities: ['image', 'vision'],
-        description: 'Google Gemini 3 Pro image generation (preview)'
-    },
-    {
-        id: 'google/gemini-2.5-flash-image',
-        name: 'Gemini 2.5 Flash Image',
-        provider: 'Google',
-        capabilities: ['image', 'fast'],
-        description: 'Gemini 2.5 Flash image model — fast image generation'
+        capabilities: ['image', 'vision', 'fast'],
+        description: 'Google Gemini 2.5 Flash image generation (preview)'
     },
 ];
 
@@ -160,4 +153,39 @@ export function getProviders() {
  * Default model ID
  */
 export const DEFAULT_MODEL = 'openai/gpt-5.1';
+
+/**
+ * Image generation model IDs
+ * These models support the modalities: ['image', 'text'] parameter
+ */
+export const IMAGE_GENERATION_MODELS = [
+    'openai/gpt-5-image',
+    'openai/gpt-5-image-mini',
+    'google/gemini-2.5-flash-preview-image-generation',
+];
+
+/**
+ * Check if a model is an image generation model
+ * @param {string} modelId 
+ * @returns {boolean}
+ */
+export function isImageGenerationModel(modelId) {
+    return IMAGE_GENERATION_MODELS.includes(modelId);
+}
+
+/**
+ * Get models with vision capability
+ * @returns {Model[]}
+ */
+export function getVisionModels() {
+    return MODELS.filter(m => m.capabilities?.includes('vision'));
+}
+
+/**
+ * Get models with image generation capability
+ * @returns {Model[]}
+ */
+export function getImageGenerationModels() {
+    return MODELS.filter(m => m.capabilities?.includes('image'));
+}
 
