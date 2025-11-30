@@ -65,7 +65,7 @@ export class ProjectModal {
                             </svg>
                         </button>
                         
-                        <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-2xl flex items-center justify-center shadow-lg">
+                        <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center shadow-lg">
                             <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
                             </svg>
@@ -89,7 +89,7 @@ export class ProjectModal {
                                 type="text" 
                                 id="projectName" 
                                 name="name"
-                                class="w-full px-4 py-3 bg-lamp-input border border-lamp-border rounded-xl text-lamp-text placeholder-lamp-muted focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-shadow"
+                                class="w-full px-4 py-3 bg-lamp-input border border-lamp-border rounded-xl text-lamp-text placeholder-lamp-muted focus:outline-none focus:border-lamp-accent focus:ring-2 focus:ring-lamp-accent/20 transition-all"
                                 placeholder="My Awesome Project"
                                 required
                             >
@@ -102,7 +102,7 @@ export class ProjectModal {
                                 id="projectDescription" 
                                 name="description"
                                 rows="3"
-                                class="w-full px-4 py-3 bg-lamp-input border border-lamp-border rounded-xl text-lamp-text placeholder-lamp-muted focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-shadow resize-none"
+                                class="w-full px-4 py-3 bg-lamp-input border border-lamp-border rounded-xl text-lamp-text placeholder-lamp-muted focus:outline-none focus:border-lamp-accent focus:ring-2 focus:ring-lamp-accent/20 transition-all resize-none"
                                 placeholder="What is this project about?"
                             ></textarea>
                         </div>
@@ -111,15 +111,15 @@ export class ProjectModal {
                         <div>
                             <label class="block text-sm font-medium text-lamp-text mb-3">Visibility</label>
                             <div class="flex gap-4">
-                                <label class="flex items-center gap-3 px-4 py-3 bg-lamp-input border border-lamp-border rounded-xl cursor-pointer hover:border-purple-400 transition-colors flex-1">
-                                    <input type="radio" id="visibilityPrivate" name="visibility" value="private" checked class="w-4 h-4 text-purple-600 focus:ring-purple-500">
+                                <label class="flex items-center gap-3 px-4 py-3 bg-lamp-input border border-lamp-border rounded-xl cursor-pointer hover:border-amber-400 transition-colors flex-1">
+                                    <input type="radio" id="visibilityPrivate" name="visibility" value="private" checked class="w-4 h-4 text-amber-500 focus:ring-amber-500">
                                     <div>
                                         <span class="text-sm font-medium text-lamp-text">Private</span>
                                         <p class="text-xs text-lamp-muted">Only you can see this</p>
                                     </div>
                                 </label>
-                                <label class="flex items-center gap-3 px-4 py-3 bg-lamp-input border border-lamp-border rounded-xl cursor-pointer hover:border-purple-400 transition-colors flex-1">
-                                    <input type="radio" id="visibilityShared" name="visibility" value="shared" class="w-4 h-4 text-purple-600 focus:ring-purple-500">
+                                <label class="flex items-center gap-3 px-4 py-3 bg-lamp-input border border-lamp-border rounded-xl cursor-pointer hover:border-amber-400 transition-colors flex-1">
+                                    <input type="radio" id="visibilityShared" name="visibility" value="shared" class="w-4 h-4 text-amber-500 focus:ring-amber-500">
                                     <div>
                                         <span class="text-sm font-medium text-lamp-text">Shared</span>
                                         <p class="text-xs text-lamp-muted">Share with a link</p>
@@ -132,7 +132,7 @@ export class ProjectModal {
                         <button 
                             type="submit" 
                             id="projectSubmitBtn"
-                            class="w-full py-3 px-4 bg-gradient-to-r from-purple-500 to-indigo-600 text-white font-semibold rounded-xl hover:from-purple-600 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            class="w-full py-3.5 bg-lamp-accent text-white font-semibold rounded-xl hover:bg-lamp-hover transition-all shadow-lg shadow-lamp-accent/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Create Project
                         </button>

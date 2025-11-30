@@ -343,8 +343,8 @@ export class Sidebar {
                 const isActive = project.id === currentProjectId;
                 html += `
                     <button data-project-id="${project.id}"
-                        class="w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors flex items-center gap-2 ${isActive ? 'bg-purple-50 text-purple-700 font-medium' : 'text-lamp-muted hover:text-lamp-text hover:bg-lamp-card/50'}">
-                        <svg class="w-4 h-4 flex-shrink-0 ${isActive ? 'text-purple-500' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        class="w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors flex items-center gap-2 ${isActive ? 'bg-amber-50 text-amber-700 font-medium' : 'text-lamp-muted hover:text-lamp-text hover:bg-lamp-card/50'}">
+                        <svg class="w-4 h-4 flex-shrink-0 ${isActive ? 'text-amber-500' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
                         </svg>
                         <span class="truncate">${escapeHtml(project.name)}</span>

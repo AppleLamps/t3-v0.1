@@ -14,6 +14,20 @@ import { isImageGenerationModel } from '../config/models.js';
 export const getSystemPrompt = (projectInstructions = '') => {
     let prompt = `You are a helpful, knowledgeable, and friendly AI assistant named LampChat. Your goal is to provide accurate, well-formatted, and contextually appropriate responses.
 
+## CRITICAL FORMATTING RULE
+
+When listing multiple items, you MUST use markdown bullet points with a dash (-) or asterisk (*) at the start of each line. Never list items on separate lines without bullet markers.
+
+Example of CORRECT formatting:
+- First item
+- Second item
+- Third item
+
+Example of WRONG formatting (never do this):
+First item
+Second item
+Third item
+
 ## Context
 - **Current Date**: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
 - **Current Time**: ${new Date().toLocaleTimeString()}
@@ -32,8 +46,9 @@ export const getSystemPrompt = (projectInstructions = '') => {
 
 ### Markdown Best Practices
 - **Readability**: Keep paragraphs concise (3-4 lines max) to ensure readability on mobile devices.
-- **Structure**: Use headers (##) and bullet points aggressively to break up text.
+- **Structure**: Use headers (##) and bullet points to break up text and improve scannability.
 - **Emphasis**: Use **bold** for key concepts and *italics* for emphasis.
+- **Lists**: Always use - or * for unordered lists, and 1. 2. 3. for ordered/sequential lists.
 
 ## Response Logic
 
@@ -203,6 +218,11 @@ export class ChatController {
             this.chatArea.showTypingIndicator();
             stateManager.setStreaming(true);
 
+            // Ensure we have a current chat before adding messages
+            if (!stateManager.currentChat) {
+                await stateManager.createChat();
+            }
+
             // Add user message (network request happens while UI shows feedback)
             await stateManager.addMessage(userMessageData);
 
@@ -214,6 +234,9 @@ export class ChatController {
 
             // Get conversation history
             const chat = stateManager.currentChat;
+            if (!chat) {
+                throw new Error('Failed to create or access chat');
+            }
             const messages = chat.messages.slice(0, -1).map(m => ({
                 role: m.role,
                 content: typeof m.content === 'string' ? m.content : this.extractTextContent(m.content),

@@ -114,8 +114,8 @@ class LampChat {
             // Refresh sidebar to show updated chats
             this.sidebar.refresh();
 
-            // Update chat area - renderMessages handles both chat and welcome states
-            this.chatArea.renderMessages();
+            // Update view
+            this._updateView();
         }
     }
 
@@ -179,13 +179,55 @@ class LampChat {
         this.projectDashboard.setHandlers({
             onEditProject: (project) => this.projectModal.showEdit(project),
             onSelectChat: (chatId) => this._selectChat(chatId),
+            onDeleteChat: (chatId) => this._deleteChat(chatId),
             onNewChat: () => this._createNewChat(),
         });
 
-        // Subscribe to project selection changes
-        stateManager.subscribe('projectSelected', (state, projectId) => {
-            this._handleProjectSelection(projectId);
+        // Subscribe to state changes that affect view
+        stateManager.subscribe('projectSelected', () => {
+            this._updateView();
         });
+
+        stateManager.subscribe('currentChatChanged', () => {
+            this._updateView();
+        });
+
+        // Initial view update
+        this._updateView();
+    }
+
+    /**
+     * Update the view based on current state
+     * Logic:
+     * 1. If currentChat exists -> Show chat area and input
+     * 2. Else if currentProject exists -> Show project dashboard
+     * 3. Else -> Show chat area (handles welcome state internally)
+     * @private
+     */
+    _updateView() {
+        const chatContainer = document.getElementById('chatContainer');
+        const inputContainer = document.getElementById('inputContainer');
+        const dashboardContainer = document.getElementById('projectDashboardContainer');
+
+        if (stateManager.currentChat) {
+            // Show chat area and input, hide dashboard
+            if (chatContainer) chatContainer.style.display = '';
+            if (inputContainer) inputContainer.style.display = '';
+            if (dashboardContainer) dashboardContainer.style.display = 'none';
+            this.chatArea.renderMessages();
+        } else if (stateManager.currentProject) {
+            // Show dashboard, hide chat area and input
+            if (chatContainer) chatContainer.style.display = 'none';
+            if (inputContainer) inputContainer.style.display = 'none';
+            if (dashboardContainer) dashboardContainer.style.display = '';
+            this.projectDashboard.refresh();
+        } else {
+            // No chat, no project - show chat area (welcome screen)
+            if (chatContainer) chatContainer.style.display = '';
+            if (inputContainer) inputContainer.style.display = '';
+            if (dashboardContainer) dashboardContainer.style.display = 'none';
+            this.chatArea.renderMessages();
+        }
     }
 
     /**
@@ -283,27 +325,7 @@ class LampChat {
      */
     async _selectProject(projectId) {
         await stateManager.selectProject(projectId || null);
-    }
-
-    /**
-     * Handle project selection changes
-     * @private
-     */
-    _handleProjectSelection(projectId) {
-        if (projectId) {
-            // Show project dashboard, hide chat area
-            this.projectDashboard.show();
-            document.getElementById('chatContainer')?.classList.add('hidden');
-            document.getElementById('inputContainer')?.classList.add('hidden');
-        } else {
-            // Hide project dashboard, show chat area
-            this.projectDashboard.hide();
-            document.getElementById('chatContainer')?.classList.remove('hidden');
-            document.getElementById('inputContainer')?.classList.remove('hidden');
-
-            // Refresh chat area - renderMessages handles both chat and welcome states
-            this.chatArea.renderMessages();
-        }
+        // _updateView will be called via projectSelected subscription
     }
 }
 
