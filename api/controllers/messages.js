@@ -1,7 +1,17 @@
-import { sql } from '../lib/sql.js';
+import { sql, isValidUUID } from '../lib/sql.js';
 
 export async function addMessage(userId, chatId, messageData = {}) {
     try {
+        // Validate chatId format
+        if (!isValidUUID(chatId)) {
+            return { error: 'Invalid chat ID format', status: 400 };
+        }
+
+        // Validate client-provided message ID if present
+        if (messageData.id && !isValidUUID(messageData.id)) {
+            return { error: 'Invalid message ID format', status: 400 };
+        }
+
         const ownership = await sql`
             SELECT id FROM chats WHERE id = ${chatId} AND user_id = ${userId}
         `;
@@ -51,6 +61,14 @@ export async function addMessage(userId, chatId, messageData = {}) {
 
 export async function updateMessage(userId, chatId, messageId, updates = {}) {
     try {
+        // Validate IDs format
+        if (!isValidUUID(chatId)) {
+            return { error: 'Invalid chat ID format', status: 400 };
+        }
+        if (!isValidUUID(messageId)) {
+            return { error: 'Invalid message ID format', status: 400 };
+        }
+
         const ownership = await sql`
             SELECT c.id FROM chats c
             JOIN messages m ON m.chat_id = c.id
@@ -85,6 +103,11 @@ export async function updateMessage(userId, chatId, messageId, updates = {}) {
 
 export async function getMessages(userId, chatId) {
     try {
+        // Validate chatId format
+        if (!isValidUUID(chatId)) {
+            return { error: 'Invalid chat ID format', status: 400 };
+        }
+
         const ownership = await sql`
             SELECT id FROM chats WHERE id = ${chatId} AND user_id = ${userId}
         `;

@@ -19,16 +19,44 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 /**
- * Verify JWT and extract user ID
- * @param {string} authHeader - Authorization header
- * @returns {Object} - { userId } or { error }
+ * Get token from request (header or cookies)
+ * @param {Object} req - Request object
+ * @returns {string|null} - Token or null
  */
-function verifyToken(authHeader) {
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return { error: 'No token provided', status: 401 };
+function getTokenFromRequest(req) {
+    // Check Authorization header first
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        // Skip placeholder token used for cookie auth
+        if (token && token !== 'cookie_auth') {
+            return token;
+        }
     }
 
-    const token = authHeader.split(' ')[1];
+    // Fall back to cookie
+    const cookies = req.headers.cookie;
+    if (cookies) {
+        const tokenMatch = cookies.match(/auth_token=([^;]+)/);
+        if (tokenMatch) {
+            return tokenMatch[1];
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Verify JWT and extract user ID
+ * @param {Object} req - Request object
+ * @returns {Object} - { userId } or { error }
+ */
+function verifyToken(req) {
+    const token = getTokenFromRequest(req);
+
+    if (!token) {
+        return { error: 'No token provided', status: 401 };
+    }
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
@@ -66,7 +94,7 @@ export default async function handler(req, res) {
     }
 
     // Verify authentication
-    const authResult = verifyToken(req.headers.authorization);
+    const authResult = verifyToken(req);
     if (authResult.error) {
         return res.status(authResult.status).json({ error: authResult.error });
     }

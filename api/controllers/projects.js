@@ -1,4 +1,4 @@
-import { sql } from '../lib/sql.js';
+import { sql, isValidUUID } from '../lib/sql.js';
 
 export async function getProjects(userId) {
     try {
@@ -40,6 +40,11 @@ export async function getProjects(userId) {
 
 export async function getProjectById(userId, projectId) {
     try {
+        // Validate projectId format
+        if (!isValidUUID(projectId)) {
+            return { error: 'Invalid project ID format', status: 400 };
+        }
+
         const projects = await sql`
             SELECT
                 p.id,
@@ -108,6 +113,11 @@ export async function createProject(userId, projectData = {}) {
 
 export async function updateProject(userId, projectId, updates = {}) {
     try {
+        // Validate projectId format
+        if (!isValidUUID(projectId)) {
+            return { error: 'Invalid project ID format', status: 400 };
+        }
+
         const ownership = await sql`
             SELECT id FROM projects WHERE id = ${projectId} AND user_id = ${userId}
         `;
@@ -135,6 +145,11 @@ export async function updateProject(userId, projectId, updates = {}) {
 
 export async function deleteProject(userId, projectId) {
     try {
+        // Validate projectId format
+        if (!isValidUUID(projectId)) {
+            return { error: 'Invalid project ID format', status: 400 };
+        }
+
         const result = await sql`
             DELETE FROM projects
             WHERE id = ${projectId} AND user_id = ${userId}
@@ -154,6 +169,11 @@ export async function deleteProject(userId, projectId) {
 
 export async function addProjectFile(userId, projectId, fileData = {}) {
     try {
+        // Validate projectId format
+        if (!isValidUUID(projectId)) {
+            return { error: 'Invalid project ID format', status: 400 };
+        }
+
         const ownership = await sql`
             SELECT id FROM projects WHERE id = ${projectId} AND user_id = ${userId}
         `;
@@ -179,6 +199,14 @@ export async function addProjectFile(userId, projectId, fileData = {}) {
 
 export async function removeProjectFile(userId, projectId, fileId) {
     try {
+        // Validate IDs format
+        if (!isValidUUID(projectId)) {
+            return { error: 'Invalid project ID format', status: 400 };
+        }
+        if (!isValidUUID(fileId)) {
+            return { error: 'Invalid file ID format', status: 400 };
+        }
+
         const ownership = await sql`
             SELECT p.id FROM projects p
             JOIN project_files pf ON pf.project_id = p.id
@@ -201,6 +229,11 @@ export async function removeProjectFile(userId, projectId, fileId) {
 
 export async function getProjectChats(userId, projectId) {
     try {
+        // Validate projectId format
+        if (!isValidUUID(projectId)) {
+            return { error: 'Invalid project ID format', status: 400 };
+        }
+
         const ownership = await sql`
             SELECT id FROM projects WHERE id = ${projectId} AND user_id = ${userId}
         `;

@@ -1,8 +1,13 @@
-import { sql } from '../lib/sql.js';
+import { sql, isValidUUID } from '../lib/sql.js';
 
 export async function getChats(userId, options = {}) {
     try {
         const { projectId = null, limit = 20, offset = 0 } = options;
+
+        // Validate projectId if provided
+        if (projectId && !isValidUUID(projectId)) {
+            return { error: 'Invalid project ID format', status: 400 };
+        }
 
         let chats;
         let totalCount;
@@ -61,6 +66,11 @@ export async function getChats(userId, options = {}) {
 
 export async function getChatById(userId, chatId) {
     try {
+        // Validate chatId format
+        if (!isValidUUID(chatId)) {
+            return { error: 'Invalid chat ID format', status: 400 };
+        }
+
         const chats = await sql`
             SELECT
                 c.id,
@@ -105,6 +115,11 @@ export async function createChat(userId, chatData = {}) {
         const title = chatData.title || 'New Chat';
         const projectId = chatData.projectId || null;
 
+        // Validate projectId if provided
+        if (projectId && !isValidUUID(projectId)) {
+            return { error: 'Invalid project ID format', status: 400 };
+        }
+
         const newChat = await sql`
             INSERT INTO chats (user_id, title, project_id)
             VALUES (${userId}, ${title}, ${projectId})
@@ -126,6 +141,16 @@ export async function createChat(userId, chatData = {}) {
 
 export async function updateChat(userId, chatId, updates = {}) {
     try {
+        // Validate chatId format
+        if (!isValidUUID(chatId)) {
+            return { error: 'Invalid chat ID format', status: 400 };
+        }
+
+        // Validate projectId if provided in updates
+        if (updates.projectId && !isValidUUID(updates.projectId)) {
+            return { error: 'Invalid project ID format', status: 400 };
+        }
+
         const ownership = await sql`
             SELECT id FROM chats WHERE id = ${chatId} AND user_id = ${userId}
         `;
@@ -151,6 +176,11 @@ export async function updateChat(userId, chatId, updates = {}) {
 
 export async function deleteChat(userId, chatId) {
     try {
+        // Validate chatId format
+        if (!isValidUUID(chatId)) {
+            return { error: 'Invalid chat ID format', status: 400 };
+        }
+
         const result = await sql`
             DELETE FROM chats
             WHERE id = ${chatId} AND user_id = ${userId}
