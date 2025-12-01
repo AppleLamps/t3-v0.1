@@ -13,6 +13,13 @@ class AuthService {
         this._user = null;
         this._listeners = new Set();
         this._initialized = false;
+
+        // Refresh token lock to prevent concurrent refresh attempts
+        this._refreshPromise = null;
+        this._isRefreshing = false;
+
+        // Rate limit tracking
+        this._rateLimitedUntil = 0;
     }
 
     /**
@@ -180,7 +187,13 @@ class AuthService {
      * @param {Object} body 
      * @returns {Promise<Object>}
      */
-    async apiRequest(endpoint, body) {
+    async apiRequest(endpoint, body, _isRetry = false) {
+        // Check if we're rate limited
+        if (Date.now() < this._rateLimitedUntil) {
+            const waitTime = Math.ceil((this._rateLimitedUntil - Date.now()) / 1000);
+            throw new Error(`Rate limited. Please wait ${waitTime} seconds.`);
+        }
+
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -190,19 +203,25 @@ class AuthService {
             body: JSON.stringify(body),
         });
 
+        // Handle rate limiting
+        if (response.status === 429) {
+            const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+            this._rateLimitedUntil = Date.now() + (retryAfter * 1000);
+            throw new Error(`Too many requests. Please wait ${retryAfter} seconds.`);
+        }
+
         const data = await response.json();
 
         if (!response.ok) {
-            // Handle authentication errors
-            if (response.status === 401) {
+            // Handle authentication errors - but only retry once
+            if (response.status === 401 && !_isRetry) {
                 // Token might be expired, try to refresh
                 try {
                     await this.refreshToken();
-                    // Retry the original request
-                    return this.apiRequest(endpoint, body);
+                    // Retry the original request (marked as retry to prevent infinite loop)
+                    return this.apiRequest(endpoint, body, true);
                 } catch (refreshError) {
-                    // Refresh failed, logout
-                    await this.logout();
+                    // Refresh failed, user will be logged out by refreshToken()
                     throw new Error('Authentication required');
                 }
             }
@@ -213,10 +232,37 @@ class AuthService {
     }
 
     /**
-     * Refresh authentication token
+     * Refresh authentication token (with lock to prevent concurrent refreshes)
      * @returns {Promise<Object>}
      */
     async refreshToken() {
+        // If already refreshing, wait for that to complete
+        if (this._isRefreshing && this._refreshPromise) {
+            return this._refreshPromise;
+        }
+
+        // Check if we're rate limited
+        if (Date.now() < this._rateLimitedUntil) {
+            await this.logout();
+            throw new Error('Rate limited during refresh');
+        }
+
+        this._isRefreshing = true;
+        this._refreshPromise = this._doRefreshToken();
+
+        try {
+            return await this._refreshPromise;
+        } finally {
+            this._isRefreshing = false;
+            this._refreshPromise = null;
+        }
+    }
+
+    /**
+     * Internal refresh token implementation
+     * @private
+     */
+    async _doRefreshToken() {
         try {
             const result = await this._apiCall('/api/auth', {
                 action: 'refresh',
@@ -228,6 +274,11 @@ class AuthService {
 
             return { success: true, user: result.user };
         } catch (error) {
+            // Check if rate limited
+            if (error.message?.includes('429') || error.message?.includes('Too many')) {
+                // Don't logout immediately, just throw
+                throw new Error('Token refresh rate limited');
+            }
             // Refresh failed, logout
             await this.logout();
             throw new Error('Token refresh failed');
@@ -242,6 +293,12 @@ class AuthService {
      * @returns {Promise<Object>}
      */
     async _apiCall(endpoint, body) {
+        // Check if we're rate limited (except for logout)
+        if (body.action !== 'logout' && Date.now() < this._rateLimitedUntil) {
+            const waitTime = Math.ceil((this._rateLimitedUntil - Date.now()) / 1000);
+            throw new Error(`Rate limited. Please wait ${waitTime} seconds.`);
+        }
+
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
@@ -250,6 +307,14 @@ class AuthService {
             credentials: 'include', // Include cookies for authentication
             body: JSON.stringify(body),
         });
+
+        // Handle rate limiting
+        if (response.status === 429) {
+            const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+            this._rateLimitedUntil = Date.now() + (retryAfter * 1000);
+            const data = await response.json().catch(() => ({}));
+            throw new Error(data.message || `Too many requests. Please wait ${retryAfter} seconds.`);
+        }
 
         const data = await response.json();
 

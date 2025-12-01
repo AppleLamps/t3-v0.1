@@ -61,6 +61,9 @@ function generateTokenPair(user) {
     return { accessToken, refreshToken };
 }
 
+// Check if running in production (Vercel sets this)
+const isProduction = process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
+
 /**
  * Set authentication cookies
  * @param {Object} res - Express response object
@@ -68,10 +71,15 @@ function generateTokenPair(user) {
  * @param {string} refreshToken - Refresh token
  */
 function setAuthCookies(res, accessToken, refreshToken) {
+    // Only use Secure flag in production (HTTPS)
+    // SameSite=Lax allows cookies to be sent on same-site requests and top-level navigations
+    const secureFlag = isProduction ? 'Secure; ' : '';
+    const sameSite = isProduction ? 'Strict' : 'Lax';
+
     // Set access token cookie (7 days)
     res.setHeader('Set-Cookie', [
-        `auth_token=${accessToken}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${7 * 24 * 60 * 60}`,
-        `refresh_token=${refreshToken}; HttpOnly; Secure; SameSite=Strict; Path=/api/auth; Max-Age=${30 * 24 * 60 * 60}`
+        `auth_token=${accessToken}; HttpOnly; ${secureFlag}SameSite=${sameSite}; Path=/; Max-Age=${7 * 24 * 60 * 60}`,
+        `refresh_token=${refreshToken}; HttpOnly; ${secureFlag}SameSite=${sameSite}; Path=/api/auth; Max-Age=${30 * 24 * 60 * 60}`
     ]);
 }
 
@@ -80,9 +88,12 @@ function setAuthCookies(res, accessToken, refreshToken) {
  * @param {Object} res - Express response object
  */
 function clearAuthCookies(res) {
+    const secureFlag = isProduction ? 'Secure; ' : '';
+    const sameSite = isProduction ? 'Strict' : 'Lax';
+
     res.setHeader('Set-Cookie', [
-        'auth_token=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0',
-        'refresh_token=; HttpOnly; Secure; SameSite=Strict; Path=/api/auth; Max-Age=0'
+        `auth_token=; HttpOnly; ${secureFlag}SameSite=${sameSite}; Path=/; Max-Age=0`,
+        `refresh_token=; HttpOnly; ${secureFlag}SameSite=${sameSite}; Path=/api/auth; Max-Age=0`
     ]);
 }
 

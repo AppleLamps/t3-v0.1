@@ -1,11 +1,12 @@
 // IndexedDB File Storage
 // ======================
-// Uses IndexedDB for storing large files (images, PDFs) to avoid localStorage quota limits
+// Uses IndexedDB for storing large files (images, PDFs) and messages to avoid localStorage quota limits
 // localStorage has ~5MB limit, while IndexedDB allows significantly larger storage
 
 const DB_NAME = 'LampChatFileStorage';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Bumped version for messages store
 const FILE_STORE = 'files';
+const MESSAGE_STORE = 'messages';
 
 let dbPromise = null;
 
@@ -35,6 +36,12 @@ function openDB() {
             if (!db.objectStoreNames.contains(FILE_STORE)) {
                 const store = db.createObjectStore(FILE_STORE, { keyPath: 'id' });
                 store.createIndex('projectId', 'projectId', { unique: false });
+            }
+
+            // Create message store if it doesn't exist
+            if (!db.objectStoreNames.contains(MESSAGE_STORE)) {
+                const msgStore = db.createObjectStore(MESSAGE_STORE, { keyPath: 'id' });
+                msgStore.createIndex('chatId', 'chatId', { unique: false });
             }
         };
     });
@@ -208,4 +215,203 @@ export async function getStorageEstimate() {
         };
     }
     return { used: 0, quota: 0, percentage: 0 };
+}
+
+// ==================
+// Message Storage Operations
+// ==================
+
+/**
+ * Store a message in IndexedDB
+ * @param {Object} message - Message object with id and chatId
+ * @returns {Promise<void>}
+ */
+export async function storeMessage(message) {
+    const db = await openDB();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([MESSAGE_STORE], 'readwrite');
+        const store = transaction.objectStore(MESSAGE_STORE);
+
+        const request = store.put(message);
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => {
+            console.error('Failed to store message:', request.error);
+            reject(request.error);
+        };
+    });
+}
+
+/**
+ * Store multiple messages in IndexedDB (batch operation)
+ * @param {Object[]} messages - Array of message objects
+ * @returns {Promise<void>}
+ */
+export async function storeMessages(messages) {
+    if (!messages || messages.length === 0) return;
+
+    const db = await openDB();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([MESSAGE_STORE], 'readwrite');
+        const store = transaction.objectStore(MESSAGE_STORE);
+
+        let completed = 0;
+        const total = messages.length;
+
+        for (const message of messages) {
+            const request = store.put(message);
+            request.onsuccess = () => {
+                completed++;
+                if (completed === total) resolve();
+            };
+            request.onerror = () => {
+                console.error('Failed to store message:', request.error);
+                reject(request.error);
+            };
+        }
+    });
+}
+
+/**
+ * Get all messages for a chat
+ * @param {string} chatId - Chat ID
+ * @returns {Promise<Object[]>} - Array of message objects
+ */
+export async function getMessagesByChat(chatId) {
+    const db = await openDB();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([MESSAGE_STORE], 'readonly');
+        const store = transaction.objectStore(MESSAGE_STORE);
+        const index = store.index('chatId');
+        const request = index.getAll(chatId);
+
+        request.onsuccess = () => {
+            // Sort messages by createdAt to maintain order
+            const messages = request.result || [];
+            messages.sort((a, b) => a.createdAt - b.createdAt);
+            resolve(messages);
+        };
+        request.onerror = () => {
+            console.error('Failed to get messages by chat:', request.error);
+            reject(request.error);
+        };
+    });
+}
+
+/**
+ * Get a single message by ID
+ * @param {string} messageId - Message ID
+ * @returns {Promise<Object|null>} - Message object or null
+ */
+export async function getMessage(messageId) {
+    const db = await openDB();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([MESSAGE_STORE], 'readonly');
+        const store = transaction.objectStore(MESSAGE_STORE);
+        const request = store.get(messageId);
+
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => {
+            console.error('Failed to get message:', request.error);
+            reject(request.error);
+        };
+    });
+}
+
+/**
+ * Update a message in IndexedDB
+ * @param {string} messageId - Message ID
+ * @param {Object} updates - Fields to update
+ * @returns {Promise<Object|null>} - Updated message or null
+ */
+export async function updateMessage(messageId, updates) {
+    const existing = await getMessage(messageId);
+    if (!existing) return null;
+
+    const updated = { ...existing, ...updates };
+    await storeMessage(updated);
+    return updated;
+}
+
+/**
+ * Delete all messages for a chat
+ * @param {string} chatId - Chat ID
+ * @returns {Promise<void>}
+ */
+export async function deleteMessagesByChat(chatId) {
+    const messages = await getMessagesByChat(chatId);
+    if (messages.length === 0) return;
+
+    const db = await openDB();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([MESSAGE_STORE], 'readwrite');
+        const store = transaction.objectStore(MESSAGE_STORE);
+
+        let completed = 0;
+        const total = messages.length;
+
+        for (const message of messages) {
+            const request = store.delete(message.id);
+            request.onsuccess = () => {
+                completed++;
+                if (completed === total) resolve();
+            };
+            request.onerror = () => {
+                console.error('Failed to delete message:', request.error);
+                reject(request.error);
+            };
+        }
+    });
+}
+
+/**
+ * Clear all messages from IndexedDB
+ * @returns {Promise<void>}
+ */
+export async function clearAllMessages() {
+    const db = await openDB();
+
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([MESSAGE_STORE], 'readwrite');
+        const store = transaction.objectStore(MESSAGE_STORE);
+        const request = store.clear();
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => {
+            console.error('Failed to clear messages:', request.error);
+            reject(request.error);
+        };
+    });
+}
+
+/**
+ * Migrate existing messages from localStorage chats to IndexedDB
+ * This should be called once on app initialization to migrate old data
+ * @param {Object} chats - Chats object from localStorage
+ * @returns {Promise<boolean>} - True if migration occurred
+ */
+export async function migrateMessagesToIndexedDB(chats) {
+    if (!chats || Object.keys(chats).length === 0) return false;
+
+    let migrated = false;
+
+    for (const chatId in chats) {
+        const chat = chats[chatId];
+        if (chat.messages && chat.messages.length > 0) {
+            // Add chatId to each message if not present
+            const messagesWithChatId = chat.messages.map(msg => ({
+                ...msg,
+                chatId: chatId,
+            }));
+            await storeMessages(messagesWithChatId);
+            migrated = true;
+        }
+    }
+
+    return migrated;
 }

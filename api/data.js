@@ -16,16 +16,40 @@ if (!process.env.JWT_SECRET) {
 const JWT_SECRET = process.env.JWT_SECRET;
 
 /**
- * Verify JWT and extract user ID
- * @param {string} authHeader - Authorization header
- * @returns {Object} - { userId } or { error }
+ * Extract token from request (cookies or Authorization header)
+ * @param {Object} req - Request object
+ * @returns {string|null} Token or null
  */
-function verifyToken(authHeader) {
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return { error: 'No token provided', status: 401 };
+function getTokenFromRequest(req) {
+    // First check Authorization header
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        return authHeader.split(' ')[1];
     }
 
-    const token = authHeader.split(' ')[1];
+    // Then check cookies
+    const cookies = req.headers.cookie;
+    if (cookies) {
+        const tokenMatch = cookies.match(/auth_token=([^;]+)/);
+        if (tokenMatch) {
+            return tokenMatch[1];
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Verify JWT and extract user ID
+ * @param {Object} req - Request object
+ * @returns {Object} - { userId } or { error }
+ */
+function verifyToken(req) {
+    const token = getTokenFromRequest(req);
+
+    if (!token) {
+        return { error: 'No token provided', status: 401 };
+    }
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
@@ -903,15 +927,16 @@ export default async function handler(req, res) {
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     // Handle preflight
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
-    // Verify authentication
-    const auth = verifyToken(req.headers.authorization);
+    // Verify authentication (checks both cookies and Authorization header)
+    const auth = verifyToken(req);
     if (auth.error) {
         return res.status(auth.status).json({ error: auth.error });
     }
