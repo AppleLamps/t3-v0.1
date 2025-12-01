@@ -66,6 +66,30 @@ class StateManager {
     }
 
     /**
+     * Resolve a chat ID, waiting for optimistic creations if needed
+     * @private
+     * @param {string} chatId
+     * @returns {Promise<string>}
+     */
+    async _resolveChatId(chatId) {
+        if (!chatId) return chatId;
+        if (!chatId.startsWith('temp_')) {
+            return chatId;
+        }
+
+        if (this._pendingChatCreations.has(chatId)) {
+            try {
+                return await this._pendingChatCreations.get(chatId);
+            } catch (error) {
+                console.error('Failed to resolve chat ID, falling back to temp ID:', error);
+                return chatId;
+            }
+        }
+
+        return chatId;
+    }
+
+    /**
      * Initialize state from repository
      * @returns {Promise<void>}
      */
@@ -365,13 +389,22 @@ class StateManager {
             this._storeChatMetadata(serverChat);
 
             // Update currentChatId if it was still pointing to temp
+            let currentChatChanged = false;
             if (this.state.currentChatId === tempId) {
                 this.state.currentChatId = serverChat.id;
+                currentChatChanged = true;
             }
 
             // Resolve the pending promise with the real ID
             this._pendingChatCreations.delete(tempId);
             resolveRealId(serverChat.id);
+
+            // Notify listeners that the chat ID has been finalized so DOM bindings can update cleanly
+            this._notify('chatIdResolved', { tempId, realId: serverChat.id, chat: serverChat });
+
+            if (currentChatChanged) {
+                this._notify('currentChatChanged', serverChat);
+            }
 
             // Notify about the update (subtle, no need to re-render completely)
             this._notify('chatUpdated', serverChat);
@@ -663,25 +696,22 @@ class StateManager {
         // Persist to server in background
         // If chat is still optimistic (temp ID), wait for real ID first
         const persistPromise = (async () => {
-            let realChatId = chatId;
+            const realChatId = await this._resolveChatId(chatId);
 
-            // Check if this is a pending optimistic chat
-            if (this._pendingChatCreations.has(chatId)) {
-                realChatId = await this._pendingChatCreations.get(chatId);
+            if (!realChatId || realChatId.startsWith('temp_')) {
+                return null;
             }
 
-            // Only persist if we have a real (non-temp) chat ID
-            if (!realChatId.startsWith('temp_')) {
-                return repository.addMessage(realChatId, {
+            try {
+                return await repository.addMessage(realChatId, {
                     ...messageData,
                     id: messageId,
-                    createdAt: optimisticMessage.createdAt, // Pass client timestamp for proper ordering
-                }).catch(error => {
-                    console.error('Failed to persist message:', error);
-                    return null;
+                    createdAt: optimisticMessage.createdAt,
                 });
+            } catch (error) {
+                console.error('Failed to persist message:', error);
+                return null;
             }
-            return null;
         })();
 
         // Only await if caller explicitly needs to wait for persistence

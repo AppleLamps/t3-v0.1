@@ -30,10 +30,17 @@ export class ChatArea {
         this._pendingStreamContent = null;
         this._rafId = null;
 
+        this._streamingRawContent = '';
+        this._streamingLastLength = 0;
+
+        this._virtualWindowSize = 100;
+
         // Track if this is initial render (to prevent fade-in animations on page load)
         this._isInitialRender = true;
         // Track rendered message IDs for incremental updates
         this._renderedMessageIds = new Set();
+        // Track which chat is currently rendered to avoid unnecessary DOM wipes
+        this._lastRenderedChatId = null;
 
         // Add lifecycle management for automatic cleanup
         mixinComponentLifecycle(this);
@@ -243,6 +250,7 @@ export class ChatArea {
                 const regenBtn = e.target.closest('[data-regen-msg]');
                 const imageEl = e.target.closest('[data-image-url]');
                 const downloadBtn = e.target.closest('.download-btn');
+                const olderBtn = e.target.closest('#olderMessagesBtn');
 
                 if (copyBtn) {
                     this._copyMessage(copyBtn.dataset.copyMsg);
@@ -256,6 +264,9 @@ export class ChatArea {
                     if (url) {
                         this._openImageLightbox(url);
                     }
+                } else if (olderBtn) {
+                    this._virtualWindowSize = Math.min(this._virtualWindowSize + 100, (stateManager.currentChat?.messages || []).length);
+                    this.renderMessages();
                 }
             });
         }
@@ -456,6 +467,7 @@ export class ChatArea {
             // Process only the new message node for code highlighting etc.
             processMessageContent(messageNode);
             scrollToBottom(this.elements.chatArea);
+            this._pruneOldMessages();
         }
     }
 
@@ -529,6 +541,8 @@ export class ChatArea {
         this.elements.messagesContainer?.insertAdjacentHTML('beforeend', html);
         this._streamingElement = document.querySelector('#streaming-msg .message-content');
         this._renderedMessageIds.add(msg.id);
+        this._streamingRawContent = '';
+        this._streamingLastLength = 0;
         scrollToBottom(this.elements.chatArea);
     }
 
@@ -540,21 +554,40 @@ export class ChatArea {
     _updateStreamingContent(content) {
         if (!this._streamingElement || !content) return;
 
-        // Buffer the content for the next animation frame
         this._pendingStreamContent = content;
 
-        // If we already have a pending animation frame, skip scheduling another
         if (this._rafId) return;
 
-        // Schedule the DOM update for the next animation frame
         this._rafId = requestAnimationFrame(() => {
             this._rafId = null;
+            if (!this._pendingStreamContent || !this._streamingElement) return;
 
-            if (this._pendingStreamContent && this._streamingElement) {
-                this._streamingElement.innerHTML = renderMarkdown(this._pendingStreamContent);
+            const prev = this._streamingRawContent || '';
+            const next = this._pendingStreamContent;
+            const prevLen = prev.length;
+            const diff = next.slice(prevLen);
+
+            this._streamingRawContent = next;
+            this._streamingLastLength = next.length;
+
+            const needsFull = this._requiresFullMarkdownRender(diff);
+
+            if (!needsFull && diff) {
+                this._streamingElement.appendChild(document.createTextNode(diff));
                 scrollToBottom(this.elements.chatArea);
+                return;
             }
+
+            this._streamingElement.innerHTML = renderMarkdown(this._streamingRawContent);
+            scrollToBottom(this.elements.chatArea);
         });
+    }
+
+    _requiresFullMarkdownRender(chunk) {
+        if (!chunk) return false;
+        if (chunk.length > 2000) return true;
+        const mdSyntax = /[`*_~#>\-\+\[\]\(\)!|\n]|^\s{0,3}\d+\.\s/;
+        return mdSyntax.test(chunk);
     }
 
     /**
@@ -606,7 +639,6 @@ export class ChatArea {
      */
     refresh() {
         // Reset tracking for new chat context
-        this._clearMessagesContainer();
         this._updateWelcomeName();
         this.renderMessages();
     }
@@ -656,8 +688,10 @@ export class ChatArea {
         const chat = stateManager.currentChat;
 
         if (!chat) {
-            // No chat - show welcome screen
-            this._clearMessagesContainer();
+            if (this._renderedMessageIds.size > 0 || this._lastRenderedChatId !== null) {
+                this._clearMessagesContainer();
+            }
+            this._lastRenderedChatId = null;
             if (this._welcomeScreen) this._welcomeScreen.show();
             if (this.elements.messagesContainer) this.elements.messagesContainer.classList.add('hidden');
             this._hideMessagesLoading();
@@ -666,26 +700,38 @@ export class ChatArea {
             return;
         }
 
+        const isNewChat = this._lastRenderedChatId !== chat.id;
+        if (isNewChat) {
+            this._clearMessagesContainer();
+            this._lastRenderedChatId = chat.id;
+        }
+
         const isLoadingMessages = stateManager.isChatMessagesLoading(chat.id);
         const hasLoadedMessages = stateManager.isChatMessagesLoaded(chat.id);
         const hasError = stateManager.hasChatMessagesError(chat.id);
 
         if (hasError) {
-            this._clearMessagesContainer();
             this._showMessagesError();
             return;
         }
 
         if (!hasLoadedMessages || isLoadingMessages) {
-            this._clearMessagesContainer();
             this._showMessagesLoading();
             return;
         }
 
+        this._hideMessagesLoading();
+        this._hideMessagesError();
+
         const messages = chat.messages || stateManager.state.messagesByChatId[chat.id] || [];
+        const total = messages.length;
+        const startIndex = Math.max(0, total - this._virtualWindowSize);
+        const visibleMessages = messages.slice(startIndex);
 
         if (messages.length === 0) {
-            this._clearMessagesContainer();
+            if (this._renderedMessageIds.size > 0) {
+                this._clearMessagesContainer();
+            }
             if (this._welcomeScreen) this._welcomeScreen.show();
             if (this.elements.messagesContainer) this.elements.messagesContainer.classList.add('hidden');
             this._hideMessagesLoading();
@@ -697,8 +743,7 @@ export class ChatArea {
         // Switch to chat mode
         this._ensureChatMode();
 
-        // Create a set of current message IDs from state
-        const stateMessageIds = new Set(messages.map(m => m.id));
+        const stateMessageIds = new Set(visibleMessages.map(m => m.id));
 
         // Remove DOM nodes for messages no longer in state
         const existingNodes = this.elements.messagesContainer?.querySelectorAll('[data-message-id]') || [];
@@ -714,7 +759,7 @@ export class ChatArea {
         // Don't animate on initial render to prevent cascading fade-ins
         const shouldAnimate = !this._isInitialRender;
 
-        for (const msg of messages) {
+        for (const msg of visibleMessages) {
             if (!this._renderedMessageIds.has(msg.id)) {
                 this._appendMessageToDom(msg, shouldAnimate);
             }
@@ -725,8 +770,50 @@ export class ChatArea {
             this._isInitialRender = false;
         }
 
-        // Scroll to bottom
+        if (startIndex > 0) {
+            this._insertOlderMessagesNotice(startIndex);
+        } else {
+            this._removeOlderMessagesNotice();
+        }
+
         scrollToBottom(this.elements.chatArea);
+    }
+
+    _insertOlderMessagesNotice(hiddenCount) {
+        const container = this.elements.messagesContainer;
+        if (!container) return;
+        let notice = container.querySelector('#olderMessagesNotice');
+        if (!notice) {
+            const div = document.createElement('div');
+            div.id = 'olderMessagesNotice';
+            div.className = 'flex justify-center';
+            div.innerHTML = `
+                <button id="olderMessagesBtn" class="mb-2 px-3 py-1 text-xs bg-lamp-input rounded-md hover:bg-lamp-hover transition-colors">Show earlier messages</button>
+            `;
+            container.insertAdjacentElement('afterbegin', div);
+        }
+    }
+
+    _removeOlderMessagesNotice() {
+        document.getElementById('olderMessagesNotice')?.remove();
+    }
+
+    _pruneOldMessages() {
+        const container = this.elements.messagesContainer;
+        if (!container) return;
+        const nodes = Array.from(container.querySelectorAll('[data-message-id]'));
+        if (nodes.length <= this._virtualWindowSize) return;
+        const excess = nodes.length - this._virtualWindowSize;
+        let removed = 0;
+        for (const node of nodes) {
+            if (removed >= excess) break;
+            if (node.id === 'streaming-msg') continue;
+            const id = node.getAttribute('data-message-id');
+            node.remove();
+            this._renderedMessageIds.delete(id);
+            removed++;
+        }
+        this._insertOlderMessagesNotice(removed);
     }
 
     /**
@@ -734,7 +821,7 @@ export class ChatArea {
      * @private
      */
     _clearMessagesContainer() {
-        if (this.elements.messagesContainer) {
+        if (this.elements.messagesContainer && this.elements.messagesContainer.firstChild) {
             this.elements.messagesContainer.innerHTML = '';
         }
         this._renderedMessageIds.clear();

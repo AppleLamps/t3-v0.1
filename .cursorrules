@@ -1,0 +1,82 @@
+# Cursor Rules for LampChat (Vite + Tailwind + Vanilla JS + Vercel serverless)
+
+# Ensures AI suggestions match existing style, architecture, and security patterns.
+
+- Use ESM everywhere; import/export with `import ... from '...';` and `export` syntax.
+- Always include `.js` file extensions in local imports (due to `"type": "module"`).
+- Place CSS imports first in entry modules (e.g., `import './src/style.css';`).
+- Use single quotes for JavaScript strings; use template literals for HTML fragments.
+- Use double quotes for HTML attributes in template strings.
+- End all statements with semicolons.
+- Use 4 spaces for indentation; no tabs.
+- Prefer trailing commas in arrays and objects when syntactically allowed.
+- Keep lines reasonably short; break long strings using template literals.
+- Name variables and functions in `camelCase`; classes in `PascalCase`; constants in `UPPER_SNAKE_CASE`.
+- Name component files in `PascalCase` under `src/components` (e.g., `Sidebar.js`, `ProjectModal.js`).
+- Name service, utils, and repo files by domain (`state.js`, `openrouter.js`, `dom.js`, `LocalStorageRepository.js`).
+- Organize code under `src/` by responsibility: `components/`, `services/`, `repositories/`, `utils/`, `config/`, `styles/`.
+- Keep serverless functions under `api/` (`auth.js`, `chat.js`, `data.js`) targeting Vercel.
+- Keep database schema in `db/schema.sql`; use Neon serverless for Postgres access.
+- Follow component class pattern: `constructor` → `init(containerId)` → internal `_render()` and `_bindEvents()` → `setHandlers()` → `refresh()` → `destroy()`.
+- Use `Component` lifecycle utilities or `mixinComponentLifecycle(this)` to auto-clean listeners/timeouts.
+- Bind events via `this.on(target, type, handler)` for automatic cleanup; avoid raw `addEventListener` in components.
+- Render UI with template strings and `setHtml(element, html)`; avoid direct innerHTML concatenations outside utilities.
+- Use DOM helpers from `src/utils/dom.js` (`$`, `$$`, `$$$`, `setHtml`, `escapeHtml`, `addListener`, etc.).
+- Escape any user-provided content with `escapeHtml` before injecting into HTML strings.
+- Use Tailwind utility classes consistently; leverage the custom `lamp` theme colors and `DM Sans`/`JetBrains Mono` fonts.
+- Prefer semantic, composable Tailwind utilities over custom CSS; add styles in `src/styles/main.css` when necessary.
+- Respect Tailwind config `content` paths and theme extensions; keep `tailwind.config.js` authoritative for design tokens.
+- Keep import grouping ordered: styles → services → components → utils → config → repositories → local modules.
+- Use `stateManager` for global state: subscribe with `stateManager.subscribe(event, cb)`; notify via `stateManager._notify(event, data)` only from inside state manager.
+- Do not introduce new global state managers; extend `StateManager` for state ops (pagination, selection, caching).
+- Use optimistic updates for chat creation and message flows per `stateManager` conventions.
+- Cache messages in `stateManager.messagesByChatId`; keep references in chat objects in sync via `_setChatMessages`.
+- Lazily load messages for selected chat with `stateManager.loadMessages(chatId)`; avoid eager fetch of all chats.
+- Filter chats by project in selectors; keep sort order by `updatedAt` descending.
+- Route data access through the dynamic `repository` proxy; never import repository implementations directly where not needed.
+- Switch repositories based on auth via `authService.isLoggedIn()` (LocalStorage vs Neon).
+- Keep `ChatController` responsible for message send/regenerate, streaming handling, and attachments formatting.
+- Use `OpenRouterService` for API calls; set proxy mode via `setProxyMode(true, token)` for authenticated users to avoid exposing API keys.
+- In non-proxy mode, set client-side API key from settings; in proxy mode, clear client-side key.
+- Build multimodal message content with `OpenRouterService._buildMessageContent(text, attachments)`.
+- Stream responses with SSE parsing; compute usage stats and forward `onToken`/`onComplete` as in existing service.
+- Support image generation modalities when model is flagged in `config/models.js`.
+- Handle transient failures with exponential backoff on 429/5xx; avoid recursion; cap retries.
+- Log errors with `console.error('Context:', error)` and surface user-safe messages; never leak secrets.
+- Use `try/catch` around async entry points (`init`, serverless handlers, network ops).
+- Never expose API keys in client logs or network payloads; prefer proxy flow for authenticated users.
+- Implement confirmation dialogs via `showConfirm(message, options)` for destructive actions (delete, logout).
+- Keep authentication flows in `api/auth.js` with bcrypt password hashing and JWT issuance.
+- Use short-lived access tokens and refresh tokens; set cookies with `HttpOnly`, environment-aware `Secure`, and appropriate `SameSite`.
+- Read tokens from cookies or `Authorization` headers; validate with `jwt.verify` and check `type` (access vs refresh).
+- Handle rate limiting in `api/utils/rateLimiter.js`; apply middleware in `api/auth.js` before processing.
+- Implement serverless handlers as default async functions with method guards and CORS headers.
+- For OpenRouter proxy in `api/chat.js`, forward headers `Authorization`, `Content-Type`, `HTTP-Referer`, `X-Title`; stream chunks to client.
+- In `api/data.js`, use parameterized queries via Neon tagged templates; never build SQL strings via concatenation.
+- For CRUD, verify ownership before mutations; return canonical shapes with `createdAt`/`updatedAt` as ISO or database-provided timestamps.
+- Keep pagination consistent (`limit`, `offset`, `hasMore`, `total`); compute with count queries.
+- Serialize complex fields as JSON (`stats`, `generatedImages`) and cast to `jsonb` in SQL.
+- On import/export bulk ops, avoid importing API keys; only migrate safe settings and content.
+- Default models and settings must match `config/models.js` and server defaults; keep lists centralized.
+- Use environment variables for secrets (`DATABASE_URL`, `JWT_SECRET`); never hardcode them.
+- Vite server runs at port `3000`; proxy `/api` to `http://localhost:3001` during development; keep `vite.config.js` authoritative.
+- Build outputs to `dist/`; do not commit `dist/` changes unless required by deployment flow.
+- Keep `index.html` minimal and accessible; mount containers by IDs used by components (`sidebarContainer`, `chatContainer`, etc.).
+- Prefer small, focused modules; do not introduce frameworks (React, Redux) unless requested; keep vanilla JS approach.
+- Use JSDoc block comments for public functions, typedefs, and classes; include param and return annotations.
+- Keep top-of-file module headers brief and consistent; use `/** ... */` for documentation.
+- Avoid inline comments except where essential; prefer clear, self-documenting code.
+- No testing framework is present; do not add tests unless explicitly requested; if added, keep tooling lightweight and aligned with Vite.
+- Respect `.gitignore`; do not commit secrets, environment files, or local build artifacts.
+- Maintain consistent error responses in serverless handlers with `{ error: string }` and proper `status`.
+- Ensure UI updates call `renderThreads()`, `renderProjects()`, `refresh()`, and `_updateView()` appropriately on state changes.
+- Use delegated events for list items and buttons (e.g., project/chat selection, delete) to minimize listeners.
+- Follow accessible semantics (focus management, keyboard support where applicable) in custom dialogs and interactive elements.
+- Keep file attachments as data URLs for multimodal messages; validate and size-limit as appropriate in the UI layer.
+- Do not introduce new global singletons; reuse `getOpenRouterService` and `stateManager`.
+- When adding models or features, update `src/config/models.js` and `src/config/constants.js` rather than scattering literals.
+- Keep naming consistent for IDs and dataset attributes; use `data-*` attributes in rendered HTML for delegation hooks.
+- Avoid blocking UI during network calls; reflect loading states via CSS classes and disabled attributes; reuse existing patterns.
+- Ensure network calls set appropriate headers (`Content-Type: application/json`) and handle both streaming and non-streaming flows.
+- Defer to repository for all persistence operations; keep services free of direct DB logic on the client.
+- Keep security-first posture: validate inputs server-side, avoid leaking stack traces, and sanitize outputs.

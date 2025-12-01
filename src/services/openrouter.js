@@ -308,9 +308,16 @@ export class OpenRouterService {
                         continue; // Retry with next iteration
                     }
 
-                    // Non-retryable error or max retries reached
-                    const error = await response.json().catch(() => ({ error: { message: `HTTP ${status}` } }));
-                    throw new Error(error.error?.message || `API request failed: ${status}`);
+                    const errorPayload = await response.json().catch(() => ({ error: { message: `HTTP ${status}` } }));
+                    const errorMessage = errorPayload.error?.message || `API request failed: ${status}`;
+
+                    // Break immediately on non-rate-limit 4xx errors to avoid hammering with bad credentials
+                    if (status >= 400 && status < 500) {
+                        callbacks.onError(new Error(errorMessage));
+                        return;
+                    }
+
+                    throw new Error(errorMessage);
                 }
 
                 const reader = response.body.getReader();
