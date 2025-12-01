@@ -31,15 +31,23 @@ A modern, full-featured AI chat application inspired by [T3 Chat](https://t3.cha
 
 - **Optional User Accounts** — Sign up/login for cloud storage or use locally
 - **Neon PostgreSQL Backend** — Cloud database for authenticated users
-- **Automatic Data Sync** — Chats sync across devices when logged in
+- **Automatic Data Sync** — Chats and projects sync across devices when logged in
 - **JWT Authentication** — Secure token-based authentication with 7-day expiry
 - **Data Export/Import** — Export and import all your data
+
+### Projects
+
+- **Project Organization** — Group related chats with custom instructions and knowledge base files
+- **Custom Instructions** — System prompts applied to all chats within a project
+- **File Attachments** — Upload and manage project-specific files (PDFs, text, etc.) for context
+- **Project Dashboard** — Manage project settings, files, and associated chats
+- **Visibility Control** — Private projects or shareable with links
 
 ### Data & Privacy
 
 - **Dual Storage Modes** — LocalStorage for guests, Neon PostgreSQL for authenticated users
 - **Chat History** — Persistent conversations with search and date grouping
-- **Privacy-First** — Your API key stays in your browser (never sent to our servers)
+- **Privacy-First** — Your API key stays in your browser (guests) or is encrypted server-side (authenticated users)
 - **Direct API Calls** — Messages go directly to OpenRouter, not through any intermediary
 
 ## 🚀 Quick Start
@@ -93,11 +101,13 @@ npm run preview
 |----------|-------------|----------|
 | `DATABASE_URL` | Neon PostgreSQL connection string | Yes (for auth) |
 | `JWT_SECRET` | Secret key for JWT token signing | Yes (for auth) |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis URL for rate limiting | Yes (for rate limiting) |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis token | Yes (for rate limiting) |
 
 ### Database Setup
 
 1. Create a free [Neon PostgreSQL](https://neon.tech) database
-2. Run the schema in `db/schema.sql` to create tables
+2. Run the schema in `db/schema.sql` to create tables (includes users, chats, messages, projects, and project_files)
 3. Add your `DATABASE_URL` to Vercel environment variables
 
 ## 📁 Project Structure
@@ -111,7 +121,10 @@ lampchat/
 │
 ├── api/                        # Vercel Serverless Functions
 │   ├── auth.js                 # Authentication (signup/login/verify)
-│   └── data.js                 # Data operations (CRUD for chats, messages, settings)
+│   ├── chat.js                 # Chat proxy for authenticated users (keeps API key server-side)
+│   ├── data.js                 # Data operations (CRUD for chats, messages, settings)
+│   └── utils/
+│       └── rateLimiter.js      # Rate limiting with Upstash Redis
 │
 ├── db/
 │   └── schema.sql              # Neon PostgreSQL schema
@@ -141,6 +154,8 @@ lampchat/
     │   ├── MessageInput.js     # Input & model selector
     │   ├── Settings.js         # Full-page settings (T3-style)
     │   ├── AuthModal.js        # Login/Signup modal
+    │   ├── ProjectModal.js     # Modal for creating/editing projects
+    │   ├── ProjectDashboard.js # Project management dashboard
     │   ├── chat/               # Chat sub-components
     │   │   ├── MessageRenderer.js
     │   │   ├── PromptSelector.js
@@ -175,7 +190,7 @@ import { authService } from '../services/auth.js';
 
 // Automatically selects the appropriate repository:
 // - LocalStorageRepository for guest users
-// - NeonRepository for authenticated users
+// - NeonRepository for authenticated users (includes projects, chats, messages)
 export function getRepository() {
     if (authService.isLoggedIn()) {
         return getNeonRepository();
@@ -225,6 +240,27 @@ class MyComponent {
         // Cleanup subscriptions
     }
 }
+```
+
+### Proxy Mode for Authenticated Users
+
+For enhanced security, authenticated users' API keys are stored server-side and chat requests are proxied through Vercel serverless functions:
+
+```javascript
+// In proxy mode, API key is fetched from database server-side
+this.openRouter.setProxyMode(true, jwtToken);
+// Client-side API key is cleared for security
+this.openRouter.setApiKey('');
+```
+
+### Rate Limiting Architecture
+
+Distributed rate limiting prevents abuse using Upstash Redis:
+
+```javascript
+// Rate limits are enforced per IP address and action type
+const rateLimitMiddleware = createRateLimitMiddleware('chat');
+// Limits: 60 chat requests per minute, 10 auth attempts per minute, etc.
 ```
 
 ## 🎨 Customization
@@ -308,10 +344,13 @@ export default {
 **Runtime Dependencies:**
 
 - [@neondatabase/serverless](https://neon.tech) `^0.10.4` — Neon PostgreSQL client
+- [@upstash/redis](https://upstash.com/docs/redis) `^1.35.7` — Distributed rate limiting
+- [@upstash/vector](https://upstash.com/docs/vector) `^1.2.2` — Vector operations
 - [bcryptjs](https://www.npmjs.com/package/bcryptjs) `^2.4.3` — Password hashing
 - [jsonwebtoken](https://www.npmjs.com/package/jsonwebtoken) `^9.0.2` — JWT authentication
 - [Highlight.js](https://highlightjs.org/) `^11.9.0` — Code highlighting
 - [Marked](https://marked.js.org/) `^11.1.1` — Markdown parser
+- [marked-highlight](https://github.com/markedjs/marked-highlight) `^2.2.3` — Syntax highlighting for markdown
 - [DOMPurify](https://github.com/cure53/DOMPurify) `^3.3.0` — HTML sanitization
 
 **External (Google Fonts CDN):**
@@ -326,8 +365,8 @@ LampChat supports 15+ AI models via OpenRouter:
 |----------|--------|
 | **OpenAI** | GPT-5.1, GPT-5.1 Chat, GPT-5 Image, GPT-5 Image Mini |
 | **Anthropic** | Claude Opus 4.5, Claude Sonnet 4.5, Claude Haiku 4.5 |
-| **Google** | Gemini 3 Pro, Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.5 Flash Lite, Gemini 2.5 Flash Image |
-| **xAI** | Grok 4 Fast, Grok 4.1 Fast (Free), Grok Code Fast |
+| **Google** | Gemini 3 Pro (Preview), Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.5 Flash (Lite), Gemini 2.5 Flash Image |
+| **xAI** | Grok 4 (Fast), Grok 4.1 Fast (Free), Grok Code (Fast) |
 
 ## 🔐 Privacy & Security
 
@@ -335,6 +374,7 @@ LampChat supports 15+ AI models via OpenRouter:
 - **Password Security**: Passwords are hashed with bcrypt (10 salt rounds)
 - **JWT Tokens**: Secure authentication with 7-day expiry
 - **Direct API Calls**: Chat messages go directly to OpenRouter, not through our servers
+- **Rate Limiting**: Distributed rate limiting with Upstash Redis to prevent abuse
 - **No Analytics**: No tracking or data collection
 - **XSS Protection**: All rendered content sanitized with DOMPurify
 
@@ -344,6 +384,8 @@ LampChat supports 15+ AI models via OpenRouter:
 - [x] ~~Image generation~~ ✅ **AI image generation** with GPT-5 Image, Gemini
 - [x] ~~Neon PostgreSQL integration~~ ✅ **Cloud database** for authenticated users
 - [x] ~~User authentication~~ ✅ **JWT-based auth** with signup/login
+- [x] ~~Project organization~~ ✅ **Projects with custom instructions and file attachments**
+- [x] ~~Rate limiting~~ ✅ **Distributed rate limiting** with Upstash Redis
 - [ ] Dark mode toggle
 - [ ] Chat export (JSON, Markdown)
 - [ ] System prompts / personas
