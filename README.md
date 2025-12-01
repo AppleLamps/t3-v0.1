@@ -2,8 +2,6 @@
 
 A modern, full-featured AI chat application inspired by [T3 Chat](https://t3.chat). Built with vanilla JavaScript and a modular architecture, featuring optional cloud sync with user authentication and Neon PostgreSQL.
 
-![LampChat Screenshot](https://via.placeholder.com/800x450?text=LampChat+Screenshot)
-
 ## ✨ Features
 
 ### Core Chat Features
