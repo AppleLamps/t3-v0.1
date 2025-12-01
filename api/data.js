@@ -9,8 +9,11 @@ import jwt from 'jsonwebtoken';
 // Initialize Neon client
 const sql = neon(process.env.DATABASE_URL);
 
-// JWT secret
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+// JWT secret - MUST be set in environment variables
+if (!process.env.JWT_SECRET) {
+    throw new Error('Missing JWT_SECRET environment variable');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 /**
  * Verify JWT and extract user ID

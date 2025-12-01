@@ -6,6 +6,7 @@ import { $ } from '../utils/dom.js';
 import { ModelSelector } from './input/ModelSelector.js';
 import { AttachmentManager } from './input/AttachmentManager.js';
 import { MAX_TEXTAREA_HEIGHT } from '../config/constants.js';
+import { mixinComponentLifecycle } from './Component.js';
 
 /**
  * @typedef {Object} Attachment
@@ -22,6 +23,8 @@ import { MAX_TEXTAREA_HEIGHT } from '../config/constants.js';
  */
 export class MessageInput {
     constructor() {
+        mixinComponentLifecycle(this);
+
         this.elements = {
             form: null,
             textarea: null,
@@ -38,7 +41,7 @@ export class MessageInput {
         };
 
         this._unsubscribers = [];
-        
+
         // Sub-components
         this._modelSelector = null;
         this._attachmentManager = null;
@@ -175,7 +178,7 @@ export class MessageInput {
             this.elements.selectedModelName
         );
         this._modelSelector.init();
-        
+
         // Initialize attachment manager
         this._attachmentManager = new AttachmentManager(
             this.elements.attachmentsArea,
@@ -255,7 +258,7 @@ export class MessageInput {
             e.preventDefault();
             e.stopPropagation();
             this.elements.form.classList.remove('ring-2', 'ring-amber-500', 'ring-offset-2');
-            
+
             if (e.dataTransfer?.files?.length) {
                 try {
                     await this._attachmentManager.handleFileSelect(e.dataTransfer.files);
@@ -310,7 +313,7 @@ export class MessageInput {
         const message = this.elements.textarea?.value.trim();
         const attachments = this._attachmentManager ? this._attachmentManager.getAttachments() : [];
         const hasAttachments = attachments.length > 0;
-        
+
         // Allow sending if there's a message OR attachments
         if (!message && !hasAttachments) return;
         if (stateManager.isStreaming) return;

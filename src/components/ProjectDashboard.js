@@ -6,12 +6,15 @@ import { $, setHtml, showConfirm } from '../utils/dom.js';
 import { stateManager } from '../services/state.js';
 import { formatRelativeTime } from '../utils/date.js';
 import { fileToBase64 } from '../utils/files.js';
+import { mixinComponentLifecycle } from './Component.js';
 
 /**
  * Project Dashboard component - displays project overview and settings
  */
 export class ProjectDashboard {
     constructor() {
+        mixinComponentLifecycle(this);
+
         this.elements = {
             container: null,
             instructionsTextarea: null,

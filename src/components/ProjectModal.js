@@ -4,12 +4,15 @@
 
 import { $, setHtml } from '../utils/dom.js';
 import { stateManager } from '../services/state.js';
+import { mixinComponentLifecycle } from './Component.js';
 
 /**
  * Project modal component - handles project creation and editing
  */
 export class ProjectModal {
     constructor() {
+        mixinComponentLifecycle(this);
+
         this.elements = {
             modal: null,
             form: null,
@@ -172,7 +175,7 @@ export class ProjectModal {
         this.elements.form?.addEventListener('submit', (e) => this._handleSubmit(e));
 
         // Close on escape
-        document.addEventListener('keydown', (e) => {
+        this.on(document, 'keydown', (e) => {
             if (e.key === 'Escape' && this.elements.modal?.style.display !== 'none') {
                 this.hide();
             }

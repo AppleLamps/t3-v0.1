@@ -53,6 +53,10 @@ class LampChat {
             const settings = stateManager.settings;
             this.openRouter = getOpenRouterService(settings?.apiKey);
 
+            // Configure proxy mode for authenticated users
+            // This prevents API key exposure in the browser Network tab
+            this._updateProxyMode();
+
             // Initialize components
             this._initComponents();
 
@@ -73,17 +77,21 @@ class LampChat {
 
             // Subscribe to settings changes to update API key
             stateManager.subscribe('settingsUpdated', (state) => {
-                this.openRouter.setApiKey(state.settings?.apiKey || '');
+                // In proxy mode, we don't need to set the client-side API key
+                // The server fetches it from the database
+                if (!this.openRouter.isUsingProxy()) {
+                    this.openRouter.setApiKey(state.settings?.apiKey || '');
+                }
             });
 
-            // Check for API key
-            if (!settings?.apiKey) {
+            // Check for API key (only in non-authenticated mode)
+            if (!authService.isLoggedIn() && !settings?.apiKey) {
                 setTimeout(() => {
                     this.settings.open();
                 }, 500);
             }
 
-            console.log('LampChat initialized', authService.isLoggedIn() ? '(authenticated)' : '(local mode)');
+            console.log('LampChat initialized', authService.isLoggedIn() ? '(authenticated - using secure proxy)' : '(local mode)');
 
         } catch (error) {
             console.error('Failed to initialize LampChat:', error);
@@ -107,15 +115,42 @@ class LampChat {
             stateManager._initialized = false;
             await stateManager.initialize();
 
-            // Update OpenRouter with new settings
-            const settings = stateManager.settings;
-            this.openRouter.setApiKey(settings?.apiKey || '');
+            // Update proxy mode based on auth state
+            this._updateProxyMode();
+
+            // Only update client-side API key in non-proxy mode
+            if (!this.openRouter.isUsingProxy()) {
+                const settings = stateManager.settings;
+                this.openRouter.setApiKey(settings?.apiKey || '');
+            }
 
             // Refresh sidebar to show updated chats
             this.sidebar.refresh();
 
             // Update view
             this._updateView();
+        }
+    }
+
+    /**
+     * Update proxy mode based on authentication state
+     * When authenticated, use backend proxy to keep API key server-side
+     * @private
+     */
+    _updateProxyMode() {
+        const isLoggedIn = authService.isLoggedIn();
+        const token = authService.token;
+
+        if (isLoggedIn && token) {
+            // Enable proxy mode - API key is fetched server-side
+            this.openRouter.setProxyMode(true, token);
+            // Clear client-side API key for security
+            this.openRouter.setApiKey('');
+        } else {
+            // Disable proxy mode - use client-side API key (BYOK)
+            this.openRouter.setProxyMode(false, null);
+            const settings = stateManager.settings;
+            this.openRouter.setApiKey(settings?.apiKey || '');
         }
     }
 

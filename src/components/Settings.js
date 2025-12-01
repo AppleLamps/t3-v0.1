@@ -2,9 +2,11 @@
 // ===================================
 
 import { stateManager } from '../services/state.js';
+import { authService } from '../services/auth.js';
 import { $, setHtml, showConfirm } from '../utils/dom.js';
 import { MODELS } from '../config/models.js';
 import { APP_NAME } from '../config/constants.js';
+import { mixinComponentLifecycle } from './Component.js';
 
 /**
  * Settings page component - T3-style full page settings
@@ -19,6 +21,9 @@ export class Settings {
 
         this._activeTab = 'account';
         this._unsubscribers = [];
+
+        // Add lifecycle management for automatic cleanup
+        mixinComponentLifecycle(this);
     }
 
     /**
@@ -167,34 +172,44 @@ export class Settings {
 
     /**
      * Bind event handlers
+     * Uses this.on() for automatic cleanup on destroy
      * @private
      */
     _bindEvents() {
         // Back button
-        this.elements.backBtn?.addEventListener('click', () => this.close());
+        if (this.elements.backBtn) {
+            this.on(this.elements.backBtn, 'click', () => this.close());
+        }
 
         // Tab switching
-        this.elements.tabs?.addEventListener('click', (e) => {
-            const tab = e.target.closest('[data-tab]');
-            if (tab) {
-                this._switchTab(tab.dataset.tab);
-            }
-        });
+        if (this.elements.tabs) {
+            this.on(this.elements.tabs, 'click', (e) => {
+                const tab = e.target.closest('[data-tab]');
+                if (tab) {
+                    this._switchTab(tab.dataset.tab);
+                }
+            });
+        }
 
         // Theme toggle (placeholder)
-        $('themeToggleBtn')?.addEventListener('click', () => {
-            alert('Dark mode coming soon!');
-        });
+        const themeBtn = $('themeToggleBtn');
+        if (themeBtn) {
+            this.on(themeBtn, 'click', () => {
+                alert('Dark mode coming soon!');
+            });
+        }
 
         // API key visibility toggle (delegated)
-        this.elements.content?.addEventListener('click', (e) => {
-            if (e.target.closest('#toggleApiKeyBtn')) {
-                this._toggleApiKeyVisibility();
-            }
-        });
+        if (this.elements.content) {
+            this.on(this.elements.content, 'click', (e) => {
+                if (e.target.closest('#toggleApiKeyBtn')) {
+                    this._toggleApiKeyVisibility();
+                }
+            });
+        }
 
         // Escape key to close
-        document.addEventListener('keydown', (e) => {
+        this.on(document, 'keydown', (e) => {
             if (e.key === 'Escape' && !this.elements.page?.classList.contains('hidden')) {
                 this.close();
             }
@@ -368,6 +383,19 @@ export class Settings {
                 break;
 
             case 'api':
+                const isLoggedIn = authService.isLoggedIn();
+                const securityMessage = isLoggedIn
+                    ? `<p class="font-medium text-emerald-800">🔒 Secure Mode Active</p>
+                       <p class="text-emerald-700 mt-1">Your API key is stored securely in your account and never exposed to the browser. All API calls are made through our secure server proxy.</p>`
+                    : `<p class="font-medium text-amber-800">Your API key is stored locally</p>
+                       <p class="text-amber-700 mt-1">Your key is only stored in your browser's local storage and is never sent to any server except OpenRouter.</p>`;
+                const securityBgClass = isLoggedIn
+                    ? 'bg-emerald-50 border-emerald-200'
+                    : 'bg-amber-50 border-amber-200';
+                const securityIconClass = isLoggedIn
+                    ? 'text-emerald-600'
+                    : 'text-amber-600';
+
                 html = `
                     <section class="mb-8">
                         <h2 class="text-xl font-semibold mb-6">API Keys</h2>
@@ -393,14 +421,13 @@ export class Settings {
                             </button>
                         </div>
                         
-                        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                        <div class="${securityBgClass} border rounded-xl p-4">
                             <div class="flex items-start gap-3">
-                                <svg class="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-5 h-5 ${securityIconClass} mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
                                 </svg>
                                 <div class="text-sm">
-                                    <p class="font-medium text-amber-800">Your API key is stored locally</p>
-                                    <p class="text-amber-700 mt-1">Your key is only stored in your browser's local storage and is never sent to any server except OpenRouter.</p>
+                                    ${securityMessage}
                                 </div>
                             </div>
                         </div>
@@ -508,26 +535,36 @@ export class Settings {
 
     /**
      * Bind tab-specific button handlers
+     * Uses this.on() for automatic cleanup
      * @private
      */
     _bindTabButtons(tab) {
         switch (tab) {
             case 'account':
-                $('saveNameBtn')?.addEventListener('click', () => this._saveName());
-                $('deleteAllBtn')?.addEventListener('click', () => this._clearData());
+                const saveNameBtn = $('saveNameBtn');
+                const deleteAllBtn = $('deleteAllBtn');
+                if (saveNameBtn) this.on(saveNameBtn, 'click', () => this._saveName());
+                if (deleteAllBtn) this.on(deleteAllBtn, 'click', () => this._clearData());
                 break;
             case 'api':
-                $('saveApiKeyBtn')?.addEventListener('click', () => this._saveApiKey());
+                const saveApiKeyBtn = $('saveApiKeyBtn');
+                if (saveApiKeyBtn) this.on(saveApiKeyBtn, 'click', () => this._saveApiKey());
                 break;
             case 'models':
-                $('saveDefaultModelBtn')?.addEventListener('click', () => this._saveDefaultModel());
-                $('saveModelsBtn')?.addEventListener('click', () => this._saveEnabledModels());
+                const saveDefaultModelBtn = $('saveDefaultModelBtn');
+                const saveModelsBtn = $('saveModelsBtn');
+                if (saveDefaultModelBtn) this.on(saveDefaultModelBtn, 'click', () => this._saveDefaultModel());
+                if (saveModelsBtn) this.on(saveModelsBtn, 'click', () => this._saveEnabledModels());
                 break;
             case 'data':
-                $('exportDataBtn')?.addEventListener('click', () => this._exportData());
-                $('importDataBtn')?.addEventListener('click', () => $('importFileInput')?.click());
-                $('importFileInput')?.addEventListener('change', (e) => this._importData(e));
-                $('clearDataBtn')?.addEventListener('click', () => this._clearData());
+                const exportDataBtn = $('exportDataBtn');
+                const importDataBtn = $('importDataBtn');
+                const importFileInput = $('importFileInput');
+                const clearDataBtn = $('clearDataBtn');
+                if (exportDataBtn) this.on(exportDataBtn, 'click', () => this._exportData());
+                if (importDataBtn) this.on(importDataBtn, 'click', () => $('importFileInput')?.click());
+                if (importFileInput) this.on(importFileInput, 'change', (e) => this._importData(e));
+                if (clearDataBtn) this.on(clearDataBtn, 'click', () => this._clearData());
                 break;
         }
     }

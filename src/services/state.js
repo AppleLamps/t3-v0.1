@@ -165,11 +165,12 @@ class StateManager {
 
     /**
      * Generate a temporary ID for optimistic updates
+     * Uses crypto.randomUUID() for collision-proof IDs
      * @private
      * @returns {string}
      */
     _generateTempId() {
-        return `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        return `temp_${crypto.randomUUID()}`;
     }
 
     /**

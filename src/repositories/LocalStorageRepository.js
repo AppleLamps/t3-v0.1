@@ -1,19 +1,21 @@
 // LocalStorage Repository Implementation
 // ======================================
 // This implements the BaseRepository interface using localStorage.
+// File data is stored in IndexedDB to avoid localStorage quota limits.
 // Can be swapped out for NeonRepository when migrating to database.
 
 import { BaseRepository } from './BaseRepository.js';
 import { STORAGE_KEYS } from '../config/constants.js';
 import { DEFAULT_MODEL, MODELS } from '../config/models.js';
+import * as fileStorage from '../utils/fileStorage.js';
 
 /**
- * Generate a unique ID
+ * Generate a unique ID using crypto.randomUUID()
  * @param {string} prefix 
  * @returns {string}
  */
 function generateId(prefix = '') {
-    return `${prefix}${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `${prefix}${crypto.randomUUID()}`;
 }
 
 /**
@@ -258,7 +260,20 @@ export class LocalStorageRepository extends BaseRepository {
 
     async getProjectById(projectId) {
         const projects = this._get(STORAGE_KEYS.PROJECTS) || {};
-        return projects[projectId] || null;
+        const project = projects[projectId] || null;
+
+        if (project && project.files && project.files.length > 0) {
+            // Load file data from IndexedDB
+            const filesWithData = await Promise.all(
+                project.files.map(async (file) => {
+                    const storedFile = await fileStorage.getFile(file.id);
+                    return storedFile ? { ...file, data: storedFile.data } : file;
+                })
+            );
+            return { ...project, files: filesWithData };
+        }
+
+        return project;
     }
 
     async createProject(projectData) {
@@ -305,6 +320,9 @@ export class LocalStorageRepository extends BaseRepository {
         const projects = this._get(STORAGE_KEYS.PROJECTS) || {};
 
         if (projects[projectId]) {
+            // Delete associated files from IndexedDB
+            await fileStorage.deleteFilesByProject(projectId);
+
             delete projects[projectId];
             this._set(STORAGE_KEYS.PROJECTS, projects);
 
@@ -334,15 +352,28 @@ export class LocalStorageRepository extends BaseRepository {
             throw new Error(`Project ${projectId} not found`);
         }
 
+        const fileId = generateId('file_');
+        const { data, ...metadata } = fileData;
+
+        // Store file data in IndexedDB (avoids localStorage quota limits)
+        if (data) {
+            await fileStorage.storeFile(fileId, projectId, data, {
+                name: metadata.name,
+                type: metadata.type,
+                size: metadata.size,
+            });
+        }
+
+        // Store metadata in localStorage (without the large data blob)
         const file = {
-            id: generateId('file_'),
+            id: fileId,
             projectId,
             name: '',
             type: '',
-            data: '',
             size: 0,
             createdAt: Date.now(),
-            ...fileData,
+            ...metadata,
+            // Don't store data in localStorage - it's in IndexedDB
         };
 
         projects[projectId].files = projects[projectId].files || [];
@@ -350,7 +381,9 @@ export class LocalStorageRepository extends BaseRepository {
         projects[projectId].updatedAt = Date.now();
 
         this._set(STORAGE_KEYS.PROJECTS, projects);
-        return file;
+
+        // Return file with data for immediate use
+        return { ...file, data };
     }
 
     async removeProjectFile(projectId, fileId) {
@@ -365,6 +398,10 @@ export class LocalStorageRepository extends BaseRepository {
             return false;
         }
 
+        // Remove from IndexedDB
+        await fileStorage.deleteFile(fileId);
+
+        // Remove from localStorage
         projects[projectId].files.splice(fileIndex, 1);
         projects[projectId].updatedAt = Date.now();
 
@@ -414,6 +451,10 @@ export class LocalStorageRepository extends BaseRepository {
     }
 
     async clearAll(userId) {
+        // Clear files from IndexedDB
+        await fileStorage.clearAllFiles();
+
+        // Clear localStorage
         localStorage.removeItem(STORAGE_KEYS.CHATS);
         localStorage.removeItem(STORAGE_KEYS.PROJECTS);
         localStorage.removeItem(STORAGE_KEYS.USER);

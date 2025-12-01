@@ -5,6 +5,7 @@
 import { $, setHtml } from '../../utils/dom.js';
 import { stateManager } from '../../services/state.js';
 import { MODELS, getModelById } from '../../config/models.js';
+import { mixinComponentLifecycle } from '../Component.js';
 
 /**
  * Model selector class - handles model selection UI
@@ -18,6 +19,8 @@ export class ModelSelector {
      * @param {HTMLElement} selectedModelName - Element to display selected model name
      */
     constructor(modelButton, modelDropdown, modelList, modelSearch, selectedModelName) {
+        mixinComponentLifecycle(this);
+
         this.modelButton = modelButton;
         this.modelDropdown = modelDropdown;
         this.modelList = modelList;
@@ -57,7 +60,7 @@ export class ModelSelector {
         });
 
         // Close dropdown on outside click
-        document.addEventListener('click', (e) => {
+        this.on(document, 'click', (e) => {
             if (!this.modelDropdown?.contains(e.target) &&
                 !this.modelButton?.contains(e.target)) {
                 this.modelDropdown?.classList.add('hidden');

@@ -8,6 +8,7 @@ import { MessageRenderer } from './chat/MessageRenderer.js';
 import { TypingIndicator } from './chat/TypingIndicator.js';
 import { WelcomeScreen } from './chat/WelcomeScreen.js';
 import { PromptSelector } from './chat/PromptSelector.js';
+import { mixinComponentLifecycle } from './Component.js';
 
 /**
  * Chat area component - displays messages and welcome screen
@@ -28,6 +29,9 @@ export class ChatArea {
         // Performance: Buffer for streaming content updates
         this._pendingStreamContent = null;
         this._rafId = null;
+
+        // Add lifecycle management for automatic cleanup
+        mixinComponentLifecycle(this);
 
         // Sub-components
         this._messageRenderer = null;
@@ -159,31 +163,43 @@ export class ChatArea {
 
     /**
      * Bind event handlers
+     * Uses this.on() for automatic cleanup on destroy
      * @private
      */
     _bindEvents() {
         // Toggle sidebar button
-        $('toggleSidebarBtn')?.addEventListener('click', () => {
-            stateManager.toggleSidebar();
-        });
+        const toggleSidebarBtn = $('toggleSidebarBtn');
+        if (toggleSidebarBtn) {
+            this.on(toggleSidebarBtn, 'click', () => {
+                stateManager.toggleSidebar();
+            });
+        }
 
         // Settings button (header)
-        $('headerSettingsBtn')?.addEventListener('click', () => {
-            if (this.onSettingsClick) this.onSettingsClick();
-        });
+        const headerSettingsBtn = $('headerSettingsBtn');
+        if (headerSettingsBtn) {
+            this.on(headerSettingsBtn, 'click', () => {
+                if (this.onSettingsClick) this.onSettingsClick();
+            });
+        }
 
         // Floating settings button (welcome screen)
-        $('floatingSettingsBtn')?.addEventListener('click', () => {
-            if (this.onSettingsClick) this.onSettingsClick();
-        });
+        const floatingSettingsBtn = $('floatingSettingsBtn');
+        if (floatingSettingsBtn) {
+            this.on(floatingSettingsBtn, 'click', () => {
+                if (this.onSettingsClick) this.onSettingsClick();
+            });
+        }
 
         // Category buttons (delegated)
-        this.elements.welcomeScreen?.addEventListener('click', (e) => {
-            const btn = e.target.closest('[data-category]');
-            if (btn && this._promptSelector) {
-                this._promptSelector.setCategory(btn.dataset.category);
-            }
-        });
+        if (this.elements.welcomeScreen) {
+            this.on(this.elements.welcomeScreen, 'click', (e) => {
+                const btn = e.target.closest('[data-category]');
+                if (btn && this._promptSelector) {
+                    this._promptSelector.setCategory(btn.dataset.category);
+                }
+            });
+        }
 
         // Prompt buttons (delegated)
         if (this._promptSelector) {
@@ -191,26 +207,28 @@ export class ChatArea {
         }
 
         // Message actions (delegated)
-        this.elements.messagesContainer?.addEventListener('click', (e) => {
-            const copyBtn = e.target.closest('[data-copy-msg]');
-            const regenBtn = e.target.closest('[data-regen-msg]');
-            const imageEl = e.target.closest('[data-image-url]');
-            const downloadBtn = e.target.closest('.download-btn');
+        if (this.elements.messagesContainer) {
+            this.on(this.elements.messagesContainer, 'click', (e) => {
+                const copyBtn = e.target.closest('[data-copy-msg]');
+                const regenBtn = e.target.closest('[data-regen-msg]');
+                const imageEl = e.target.closest('[data-image-url]');
+                const downloadBtn = e.target.closest('.download-btn');
 
-            if (copyBtn) {
-                this._copyMessage(copyBtn.dataset.copyMsg);
-            } else if (regenBtn) {
-                if (this.onRegenerate) {
-                    this.onRegenerate(regenBtn.dataset.regenMsg);
+                if (copyBtn) {
+                    this._copyMessage(copyBtn.dataset.copyMsg);
+                } else if (regenBtn) {
+                    if (this.onRegenerate) {
+                        this.onRegenerate(regenBtn.dataset.regenMsg);
+                    }
+                } else if (imageEl && !downloadBtn) {
+                    // Open image in lightbox (unless clicking download button)
+                    const url = imageEl.dataset.imageUrl;
+                    if (url) {
+                        this._openImageLightbox(url);
+                    }
                 }
-            } else if (imageEl && !downloadBtn) {
-                // Open image in lightbox (unless clicking download button)
-                const url = imageEl.dataset.imageUrl;
-                if (url) {
-                    this._openImageLightbox(url);
-                }
-            }
-        });
+            });
+        }
     }
 
     /**

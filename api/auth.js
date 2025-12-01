@@ -9,8 +9,11 @@ import jwt from 'jsonwebtoken';
 // Initialize Neon client
 const sql = neon(process.env.DATABASE_URL);
 
-// JWT secret (should be set in Vercel environment variables)
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+// JWT secret - MUST be set in environment variables
+if (!process.env.JWT_SECRET) {
+    throw new Error('Missing JWT_SECRET environment variable. Set it in Vercel project settings.');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = '7d';
 
 /**
@@ -20,10 +23,10 @@ const JWT_EXPIRES_IN = '7d';
  */
 function generateToken(user) {
     return jwt.sign(
-        { 
-            userId: user.id, 
+        {
+            userId: user.id,
             email: user.email,
-            name: user.name 
+            name: user.name
         },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES_IN }
@@ -58,20 +61,12 @@ async function handleSignup(email, password, name = '') {
     }
 
     try {
-        // Check if user already exists
-        const existingUser = await sql`
-            SELECT id FROM users WHERE email = ${email.toLowerCase()}
-        `;
-
-        if (existingUser.length > 0) {
-            return { error: 'An account with this email already exists', status: 409 };
-        }
-
-        // Hash password
+        // Hash password first (before DB operations)
         const salt = await bcrypt.genSalt(10);
         const passwordHash = await bcrypt.hash(password, salt);
 
-        // Create user
+        // Create user - rely on unique constraint to prevent duplicates
+        // This eliminates race condition between SELECT and INSERT
         const newUser = await sql`
             INSERT INTO users (email, password_hash, name)
             VALUES (${email.toLowerCase()}, ${passwordHash}, ${name})
@@ -102,6 +97,10 @@ async function handleSignup(email, password, name = '') {
             status: 201,
         };
     } catch (error) {
+        // Check for unique constraint violation (duplicate email)
+        if (error.code === '23505') {
+            return { error: 'An account with this email already exists', status: 409 };
+        }
         console.error('Signup error:', error);
         return { error: 'Failed to create account', status: 500 };
     }
@@ -166,7 +165,7 @@ async function handleVerify(token) {
 
     try {
         const decoded = jwt.verify(token, JWT_SECRET);
-        
+
         // Fetch fresh user data
         const users = await sql`
             SELECT id, email, name, created_at, updated_at

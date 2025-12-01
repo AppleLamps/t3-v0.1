@@ -4,6 +4,7 @@
 
 import { $, setHtml, escapeHtml } from '../../utils/dom.js';
 import { formatFileSize, fileToBase64, getFileType } from '../../utils/files.js';
+import { mixinComponentLifecycle } from '../Component.js';
 
 /**
  * @typedef {Object} Attachment
@@ -24,9 +25,11 @@ export class AttachmentManager {
      * @param {HTMLElement} fileInput - File input element
      */
     constructor(attachmentsArea, fileInput) {
+        mixinComponentLifecycle(this);
+
         this.attachmentsArea = attachmentsArea;
         this.fileInput = fileInput;
-        
+
         /** @type {Attachment[]} */
         this._attachments = [];
     }
@@ -66,7 +69,7 @@ export class AttachmentManager {
             try {
                 // Validate and convert to base64
                 const dataUrl = await fileToBase64(file);
-                
+
                 // Create attachment object
                 const attachment = {
                     id: `att_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -120,7 +123,7 @@ export class AttachmentManager {
      */
     _render() {
         const attachmentsList = $('attachmentsList');
-        
+
         if (!this.attachmentsArea || !attachmentsList) return;
 
         if (this._attachments.length === 0) {

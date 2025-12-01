@@ -55,6 +55,8 @@ export class OpenRouterService {
         this.apiKey = apiKey;
         this.baseUrl = OPENROUTER_API_URL;
         this.imageGenUrl = OPENROUTER_IMAGE_GEN_URL;
+        this._useProxy = false;
+        this._authToken = null;
     }
 
     /**
@@ -66,10 +68,34 @@ export class OpenRouterService {
     }
 
     /**
+     * Configure proxy mode for authenticated users
+     * When enabled, requests go through /api/chat instead of directly to OpenRouter
+     * This keeps the API key server-side and prevents exposure in browser network tab
+     * @param {boolean} useProxy - Whether to use the proxy
+     * @param {string|null} authToken - JWT auth token for proxy authentication
+     */
+    setProxyMode(useProxy, authToken = null) {
+        this._useProxy = useProxy;
+        this._authToken = authToken;
+    }
+
+    /**
+     * Check if using proxy mode
+     * @returns {boolean}
+     */
+    isUsingProxy() {
+        return this._useProxy && !!this._authToken;
+    }
+
+    /**
      * Check if API key is configured
      * @returns {boolean}
      */
     hasApiKey() {
+        // In proxy mode, we assume the server has the API key
+        if (this.isUsingProxy()) {
+            return true;
+        }
         return !!this.apiKey;
     }
 
@@ -79,12 +105,31 @@ export class OpenRouterService {
      * @returns {Object}
      */
     _getHeaders() {
+        // In proxy mode, use JWT auth token instead of API key
+        if (this.isUsingProxy()) {
+            return {
+                'Authorization': `Bearer ${this._authToken}`,
+                'Content-Type': 'application/json',
+            };
+        }
         return {
             'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
             'HTTP-Referer': window.location.origin,
             'X-Title': APP_NAME,
         };
+    }
+
+    /**
+     * Get the appropriate API URL
+     * @private
+     * @returns {string}
+     */
+    _getApiUrl() {
+        if (this.isUsingProxy()) {
+            return '/api/chat';
+        }
+        return this.baseUrl;
     }
 
     /**
@@ -144,11 +189,11 @@ export class OpenRouterService {
      * @returns {Promise<string>} - Assistant response
      */
     async chat(model, messages, options = {}) {
-        if (!this.apiKey) {
+        if (!this.hasApiKey()) {
             throw new Error('API key not configured');
         }
 
-        const response = await fetch(this.baseUrl, {
+        const response = await fetch(this._getApiUrl(), {
             method: 'POST',
             headers: this._getHeaders(),
             body: JSON.stringify({
@@ -181,7 +226,7 @@ export class OpenRouterService {
         const MAX_RETRIES = 3;
         const BASE_DELAY = 1000; // 1 second
 
-        if (!this.apiKey) {
+        if (!this.hasApiKey()) {
             callbacks.onError(new Error('API key not configured'));
             return;
         }
@@ -244,7 +289,7 @@ export class OpenRouterService {
                     requestBody.modalities = ['image', 'text'];
                 }
 
-                const response = await fetch(this.baseUrl, {
+                const response = await fetch(this._getApiUrl(), {
                     method: 'POST',
                     headers: this._getHeaders(),
                     body: JSON.stringify(requestBody),
@@ -435,7 +480,7 @@ export class OpenRouterService {
      * @returns {Promise<ImageGenerationResult>}
      */
     async generateImage(prompt, model, options = {}) {
-        if (!this.apiKey) {
+        if (!this.hasApiKey()) {
             throw new Error('API key not configured');
         }
 
@@ -458,7 +503,7 @@ export class OpenRouterService {
             };
         }
 
-        const response = await fetch(this.baseUrl, {
+        const response = await fetch(this._getApiUrl(), {
             method: 'POST',
             headers: this._getHeaders(),
             body: JSON.stringify(requestBody),

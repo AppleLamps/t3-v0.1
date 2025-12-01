@@ -6,6 +6,7 @@ import { authService } from '../services/auth.js';
 import { $, escapeHtml, setHtml } from '../utils/dom.js';
 import { groupByDate } from '../utils/date.js';
 import { APP_NAME, DATE_GROUPS } from '../config/constants.js';
+import { mixinComponentLifecycle } from './Component.js';
 
 /**
  * Sidebar component - handles chat list and navigation
@@ -25,6 +26,9 @@ export class Sidebar {
         };
 
         this._unsubscribers = [];
+
+        // Add lifecycle management for automatic cleanup
+        mixinComponentLifecycle(this);
     }
 
     /**
@@ -187,59 +191,74 @@ export class Sidebar {
 
     /**
      * Bind event handlers
+     * Uses this.on() for automatic cleanup on destroy
      * @private
      */
     _bindEvents() {
         // New chat button
-        this.elements.newChatBtn?.addEventListener('click', () => {
-            this._onNewChat();
-        });
+        if (this.elements.newChatBtn) {
+            this.on(this.elements.newChatBtn, 'click', () => {
+                this._onNewChat();
+            });
+        }
 
         // New project button
-        this.elements.newProjectBtn?.addEventListener('click', () => {
-            this._onNewProject();
-        });
+        if (this.elements.newProjectBtn) {
+            this.on(this.elements.newProjectBtn, 'click', () => {
+                this._onNewProject();
+            });
+        }
 
         // Search input
-        this.elements.searchInput?.addEventListener('input', (e) => {
-            this._onSearch(e.target.value);
-        });
+        if (this.elements.searchInput) {
+            this.on(this.elements.searchInput, 'input', (e) => {
+                this._onSearch(e.target.value);
+            });
+        }
 
         // User profile button
-        this.elements.userProfile?.addEventListener('click', () => {
-            this._onSettingsClick();
-        });
+        if (this.elements.userProfile) {
+            this.on(this.elements.userProfile, 'click', () => {
+                this._onSettingsClick();
+            });
+        }
 
         // Auth button
-        this.elements.authBtn?.addEventListener('click', () => {
-            this._onAuthClick();
-        });
+        if (this.elements.authBtn) {
+            this.on(this.elements.authBtn, 'click', () => {
+                this._onAuthClick();
+            });
+        }
 
         // Project list click delegation
-        this.elements.projectList?.addEventListener('click', (e) => {
-            const projectBtn = e.target.closest('[data-project-id]');
-            if (projectBtn) {
-                this._onSelectProject(projectBtn.dataset.projectId);
-            }
-        });
+        if (this.elements.projectList) {
+            this.on(this.elements.projectList, 'click', (e) => {
+                const projectBtn = e.target.closest('[data-project-id]');
+                if (projectBtn) {
+                    this._onSelectProject(projectBtn.dataset.projectId);
+                }
+            });
+        }
 
         // Thread list click delegation
-        this.elements.threadList?.addEventListener('click', (e) => {
-            const threadBtn = e.target.closest('[data-chat-id]');
-            const deleteBtn = e.target.closest('[data-delete-id]');
+        if (this.elements.threadList) {
+            this.on(this.elements.threadList, 'click', (e) => {
+                const threadBtn = e.target.closest('[data-chat-id]');
+                const deleteBtn = e.target.closest('[data-delete-id]');
 
-            if (deleteBtn) {
-                e.stopPropagation();
-                this._onDeleteChat(deleteBtn.dataset.deleteId);
-            } else if (threadBtn) {
-                this._onSelectChat(threadBtn.dataset.chatId);
-            }
-        });
+                if (deleteBtn) {
+                    e.stopPropagation();
+                    this._onDeleteChat(deleteBtn.dataset.deleteId);
+                } else if (threadBtn) {
+                    this._onSelectChat(threadBtn.dataset.chatId);
+                }
+            });
+        }
 
         // Subscribe to auth changes
-        authService.subscribe(() => {
+        this._unsubscribers.push(authService.subscribe(() => {
             this._updateAuthUI();
-        });
+        }));
     }
 
     /**

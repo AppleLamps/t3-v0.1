@@ -4,6 +4,7 @@
 
 import { authService } from '../services/auth.js';
 import { $, setHtml } from '../utils/dom.js';
+import { mixinComponentLifecycle } from './Component.js';
 
 /**
  * Auth modal component - handles login and signup
@@ -24,6 +25,9 @@ export class AuthModal {
         this._mode = 'login'; // 'login' | 'signup'
         this._isLoading = false;
         this._onSuccess = null;
+
+        // Add lifecycle management for automatic cleanup
+        mixinComponentLifecycle(this);
     }
 
     /**
@@ -48,7 +52,7 @@ export class AuthModal {
      */
     _render() {
         return `
-            <div id="authModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center">
+            <div id="authModal" class="fixed inset-0 z-[100] flex items-center justify-center" style="display: none;">
                 <!-- Backdrop -->
                 <div id="authBackdrop" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
                 
@@ -178,24 +182,35 @@ export class AuthModal {
 
     /**
      * Bind event handlers
+     * Uses this.on() for automatic cleanup on destroy
      * @private
      */
     _bindEvents() {
         // Close modal
-        this.elements.closeBtn?.addEventListener('click', () => this.close());
-        this.elements.backdrop?.addEventListener('click', () => this.close());
+        if (this.elements.closeBtn) {
+            this.on(this.elements.closeBtn, 'click', () => this.close());
+        }
+        if (this.elements.backdrop) {
+            this.on(this.elements.backdrop, 'click', () => this.close());
+        }
 
         // Form submission
-        this.elements.form?.addEventListener('submit', (e) => this._handleSubmit(e));
+        if (this.elements.form) {
+            this.on(this.elements.form, 'submit', (e) => this._handleSubmit(e));
+        }
 
         // Toggle between login and signup
-        this.elements.toggleLink?.addEventListener('click', () => this._toggleMode());
+        if (this.elements.toggleLink) {
+            this.on(this.elements.toggleLink, 'click', () => this._toggleMode());
+        }
 
         // Toggle password visibility
-        this.elements.togglePasswordBtn?.addEventListener('click', () => this._togglePasswordVisibility());
+        if (this.elements.togglePasswordBtn) {
+            this.on(this.elements.togglePasswordBtn, 'click', () => this._togglePasswordVisibility());
+        }
 
         // Escape key to close
-        document.addEventListener('keydown', (e) => {
+        this.on(document, 'keydown', (e) => {
             if (e.key === 'Escape' && !this.elements.modal?.classList.contains('hidden')) {
                 this.close();
             }
@@ -213,10 +228,10 @@ export class AuthModal {
         this._updateUI();
         this._clearError();
         this._clearForm();
-        
-        this.elements.modal?.classList.remove('hidden');
+
+        if (this.elements.modal) this.elements.modal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
-        
+
         // Focus email input
         setTimeout(() => this.elements.emailInput?.focus(), 100);
     }
@@ -225,7 +240,7 @@ export class AuthModal {
      * Close the modal
      */
     close() {
-        this.elements.modal?.classList.add('hidden');
+        if (this.elements.modal) this.elements.modal.style.display = 'none';
         document.body.style.overflow = '';
         this._clearForm();
         this._clearError();
@@ -253,8 +268,8 @@ export class AuthModal {
             this.elements.title.textContent = isLogin ? 'Welcome Back' : 'Create Account';
         }
         if (this.elements.subtitle) {
-            this.elements.subtitle.textContent = isLogin 
-                ? 'Sign in to sync your chats across devices' 
+            this.elements.subtitle.textContent = isLogin
+                ? 'Sign in to sync your chats across devices'
                 : 'Sign up to save your chats in the cloud';
         }
 
@@ -270,8 +285,8 @@ export class AuthModal {
 
         // Update toggle link
         if (this.elements.toggleText) {
-            this.elements.toggleText.textContent = isLogin 
-                ? "Don't have an account?" 
+            this.elements.toggleText.textContent = isLogin
+                ? "Don't have an account?"
                 : 'Already have an account?';
         }
         if (this.elements.toggleLink) {
