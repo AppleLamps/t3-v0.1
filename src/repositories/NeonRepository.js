@@ -34,13 +34,21 @@ export class NeonRepository extends BaseRepository {
     // Chat Operations
     // ==================
 
-    async getChats(userId) {
+    async getChats(userId, options = {}) {
         try {
-            const chats = await this._request('getChats');
-            return chats || [];
+            const { limit = 20, offset = 0, projectId = null } = options;
+            const result = await this._request('getChats', {
+                data: { projectId, limit, offset },
+            });
+            // API now returns { chats, hasMore, total }
+            return {
+                chats: result?.chats || [],
+                hasMore: result?.hasMore || false,
+                total: result?.total || 0,
+            };
         } catch (error) {
             console.error('NeonRepository.getChats error:', error);
-            return [];
+            return { chats: [], hasMore: false, total: 0 };
         }
     }
 
@@ -84,13 +92,21 @@ export class NeonRepository extends BaseRepository {
         }
     }
 
-    async searchChats(query, userId) {
+    async searchChats(query, userId, options = {}) {
         try {
-            const chats = await this._request('searchChats', { data: { query } });
-            return chats || [];
+            const { limit = 20, offset = 0 } = options;
+            const result = await this._request('searchChats', {
+                data: { query, limit, offset },
+            });
+            // API now returns { chats, hasMore, total }
+            return {
+                chats: result?.chats || [],
+                hasMore: result?.hasMore || false,
+                total: result?.total || 0,
+            };
         } catch (error) {
             console.error('NeonRepository.searchChats error:', error);
-            return [];
+            return { chats: [], hasMore: false, total: 0 };
         }
     }
 

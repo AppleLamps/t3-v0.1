@@ -221,6 +221,11 @@ export class ChatController {
                 await stateManager.createChat();
             }
 
+            const activeChatId = stateManager.currentChat?.id;
+            if (activeChatId) {
+                await stateManager.loadMessages(activeChatId);
+            }
+
             // Add user message (network request happens while UI shows feedback)
             await stateManager.addMessage(userMessageData);
 
@@ -267,6 +272,8 @@ export class ChatController {
 
         const chat = stateManager.currentChat;
         if (!chat) return;
+
+        await stateManager.loadMessages(chat.id);
 
         // Find the message index
         const msgIndex = chat.messages.findIndex(m => m.id === messageId);

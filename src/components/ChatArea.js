@@ -103,6 +103,28 @@ export class ChatArea {
                 <div id="messagesContainer" class="hidden max-w-4xl mx-auto p-4 space-y-6">
                     <!-- Messages will be rendered here -->
                 </div>
+
+                <!-- Messages Loading State -->
+                <div id="messagesLoadingState" class="hidden max-w-4xl mx-auto p-8 text-center">
+                    <div class="inline-flex flex-col items-center gap-3 text-lamp-muted">
+                        <svg class="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span class="text-sm">Loading messages...</span>
+                    </div>
+                </div>
+
+                <!-- Messages Error State -->
+                <div id="messagesErrorState" class="hidden max-w-4xl mx-auto p-8 text-center">
+                    <div class="inline-flex flex-col items-center gap-3 text-lamp-muted">
+                        <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span class="text-sm">Unable to load messages.</span>
+                        <button id="retryMessagesBtn" class="px-4 py-2 text-sm bg-lamp-accent text-white rounded-lg hover:bg-lamp-hover transition-colors">Try again</button>
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -116,6 +138,9 @@ export class ChatArea {
         this.elements.chatHeader = $('chatHeader');
         this.elements.welcomeScreen = $('welcomeScreen');
         this.elements.messagesContainer = $('messagesContainer');
+        this.elements.messagesLoading = $('messagesLoadingState');
+        this.elements.messagesError = $('messagesErrorState');
+        this.elements.retryMessagesBtn = $('retryMessagesBtn');
         this.elements.welcomeName = $('welcomeName');
         this.elements.suggestedPrompts = $('suggestedPrompts');
         this.elements.floatingSettingsBtn = $('floatingSettingsBtn');
@@ -229,6 +254,17 @@ export class ChatArea {
                 }
             });
         }
+
+        if (this.elements.retryMessagesBtn) {
+            this.on(this.elements.retryMessagesBtn, 'click', () => {
+                const chatId = stateManager.currentChat?.id;
+                if (chatId) {
+                    stateManager.loadMessages(chatId, { force: true }).catch(error =>
+                        console.error('Retry message load failed:', error)
+                    );
+                }
+            });
+        }
     }
 
     /**
@@ -285,6 +321,21 @@ export class ChatArea {
                     this.renderMessages();
                 }
             }),
+            stateManager.subscribe('messagesLoading', (state, payload) => {
+                if (payload?.chatId === stateManager.currentChat?.id) {
+                    this.renderMessages();
+                }
+            }),
+            stateManager.subscribe('messagesLoaded', (state, payload) => {
+                if (payload?.chatId === stateManager.currentChat?.id) {
+                    this.renderMessages();
+                }
+            }),
+            stateManager.subscribe('messagesError', (state, payload) => {
+                if (payload?.chatId === stateManager.currentChat?.id) {
+                    this.renderMessages();
+                }
+            })
         );
     }
 
@@ -324,7 +375,8 @@ export class ChatArea {
     _renderMessagesExceptLast() {
         const chat = stateManager.currentChat;
 
-        if (!chat || chat.messages.length === 0) {
+        const messages = chat?.messages || stateManager.state.messagesByChatId[chat?.id] || [];
+        if (!chat || messages.length === 0) {
             return;
         }
 
@@ -335,7 +387,7 @@ export class ChatArea {
         if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
 
         // Render all messages except the last one
-        const messagesToRender = chat.messages.slice(0, -1);
+        const messagesToRender = messages.slice(0, -1);
 
         let html = '';
         for (const msg of messagesToRender) {
@@ -476,6 +528,32 @@ export class ChatArea {
         this.renderMessages();
     }
 
+    _showMessagesLoading() {
+        if (this._welcomeScreen) this._welcomeScreen.hide();
+        if (this.elements.messagesContainer) this.elements.messagesContainer.classList.add('hidden');
+        this._hideMessagesError();
+        if (this.elements.messagesLoading) this.elements.messagesLoading.classList.remove('hidden');
+        if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
+        if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
+    }
+
+    _hideMessagesLoading() {
+        if (this.elements.messagesLoading) this.elements.messagesLoading.classList.add('hidden');
+    }
+
+    _showMessagesError() {
+        if (this._welcomeScreen) this._welcomeScreen.hide();
+        if (this.elements.messagesContainer) this.elements.messagesContainer.classList.add('hidden');
+        this._hideMessagesLoading();
+        if (this.elements.messagesError) this.elements.messagesError.classList.remove('hidden');
+        if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
+        if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
+    }
+
+    _hideMessagesError() {
+        if (this.elements.messagesError) this.elements.messagesError.classList.add('hidden');
+    }
+
     /**
      * Update welcome name
      * @private
@@ -494,15 +572,42 @@ export class ChatArea {
         const chat = stateManager.currentChat;
         const user = stateManager.user;
 
-        if (!chat || chat.messages.length === 0) {
-            // Show welcome screen, hide header (T3-style: no header in empty state)
+        if (!chat) {
             if (this._welcomeScreen) this._welcomeScreen.show();
             if (this.elements.messagesContainer) this.elements.messagesContainer.classList.add('hidden');
+            this._hideMessagesLoading();
             if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'none';
             if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'block';
             return;
         }
 
+        const isLoadingMessages = stateManager.isChatMessagesLoading(chat.id);
+        const hasLoadedMessages = stateManager.isChatMessagesLoaded(chat.id);
+        const hasError = stateManager.hasChatMessagesError(chat.id);
+
+        if (hasError) {
+            this._showMessagesError();
+            return;
+        }
+
+        if (!hasLoadedMessages || isLoadingMessages) {
+            this._showMessagesLoading();
+            return;
+        }
+
+        const messages = chat.messages || stateManager.state.messagesByChatId[chat.id] || [];
+
+        if (messages.length === 0) {
+            if (this._welcomeScreen) this._welcomeScreen.show();
+            if (this.elements.messagesContainer) this.elements.messagesContainer.classList.add('hidden');
+            this._hideMessagesLoading();
+            if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'none';
+            if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'block';
+            return;
+        }
+
+        this._hideMessagesLoading();
+        this._hideMessagesError();
         // Show header, hide welcome screen (active chat mode)
         if (this._welcomeScreen) this._welcomeScreen.hide();
         if (this.elements.messagesContainer) this.elements.messagesContainer.classList.remove('hidden');
@@ -510,7 +615,7 @@ export class ChatArea {
         if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
 
         let html = '';
-        for (const msg of chat.messages) {
+        for (const msg of messages) {
             const isUser = msg.role === 'user';
 
             if (isUser) {

@@ -15,7 +15,14 @@ import { DEFAULT_MODEL } from '../config/models.js';
  * @property {Object} settings - User settings
  * @property {Object<string, Object>} chats - Cached chats
  * @property {Object<string, Object>} projects - Cached projects
+ * @property {boolean} hasMoreChats - Whether there are more chats to load
+ * @property {boolean} isLoadingChats - Whether chats are currently being loaded
+ * @property {number} chatOffset - Current pagination offset
+ * @property {number} chatLimit - Number of chats to load per page
  */
+
+/** @constant {number} */
+const DEFAULT_CHAT_LIMIT = 20;
 
 /**
  * State manager with reactive updates
@@ -32,6 +39,15 @@ class StateManager {
             settings: null,
             chats: {},
             projects: {},
+            // Chat message caches
+            messagesByChatId: {},
+            messagesLoadingByChatId: {},
+            messagesErrorByChatId: {},
+            // Pagination state
+            hasMoreChats: false,
+            isLoadingChats: false,
+            chatOffset: 0,
+            chatLimit: DEFAULT_CHAT_LIMIT,
         };
 
         /** @type {Map<string, Set<Function>>} */
@@ -43,6 +59,10 @@ class StateManager {
         // Maps temp chat ID → Promise that resolves with real server chat ID
         /** @type {Map<string, Promise<string>>} */
         this._pendingChatCreations = new Map();
+
+        // Track in-flight message loading operations per chat
+        /** @type {Map<string, Promise<Object[]>>} */
+        this._messageLoadPromises = new Map();
     }
 
     /**
@@ -56,12 +76,27 @@ class StateManager {
         this.state.user = await repository.getUser();
         this.state.settings = await repository.getSettings();
 
-        // Load chats
-        const chats = await repository.getChats();
-        this.state.chats = chats.reduce((acc, chat) => {
-            acc[chat.id] = chat;
-            return acc;
-        }, {});
+        // Reset message caches on fresh init
+        this.state.messagesByChatId = {};
+        this.state.messagesLoadingByChatId = {};
+        this.state.messagesErrorByChatId = {};
+        this._messageLoadPromises.clear();
+
+        // Load chats with pagination (first page)
+        this.state.isLoadingChats = true;
+        const chatsResult = await repository.getChats(null, {
+            limit: this.state.chatLimit,
+            offset: 0,
+        });
+
+        // Store chats and pagination state
+        this.state.chats = {};
+        for (const chat of chatsResult.chats) {
+            this._storeChatMetadata(chat);
+        }
+        this.state.hasMoreChats = chatsResult.hasMore;
+        this.state.chatOffset = chatsResult.chats.length;
+        this.state.isLoadingChats = false;
 
         // Load projects
         const projects = await repository.getProjects();
@@ -71,11 +106,17 @@ class StateManager {
         }, {});
 
         // Set current chat to most recent, or create new one
-        if (chats.length > 0) {
-            this.state.currentChatId = chats[0].id;
+        if (chatsResult.chats.length > 0) {
+            this.state.currentChatId = chatsResult.chats[0].id;
         } else {
             const newChat = await this.createChat();
             this.state.currentChatId = newChat.id;
+        }
+
+        if (this.state.currentChatId) {
+            this.loadMessages(this.state.currentChatId).catch(error => {
+                console.error('Failed to preload messages for initial chat:', error);
+            });
         }
 
         this._initialized = true;
@@ -159,6 +200,29 @@ class StateManager {
         return this.state.sidebarOpen;
     }
 
+    get hasMoreChats() {
+        return this.state.hasMoreChats;
+    }
+
+    get isLoadingChats() {
+        return this.state.isLoadingChats;
+    }
+
+    isChatMessagesLoaded(chatId) {
+        if (!chatId) return false;
+        return Array.isArray(this.state.messagesByChatId[chatId]);
+    }
+
+    isChatMessagesLoading(chatId) {
+        if (!chatId) return false;
+        return !!this.state.messagesLoadingByChatId[chatId];
+    }
+
+    hasChatMessagesError(chatId) {
+        if (!chatId) return false;
+        return !!this.state.messagesErrorByChatId[chatId];
+    }
+
     // ==================
     // Chat Operations
     // ==================
@@ -171,6 +235,67 @@ class StateManager {
      */
     _generateTempId() {
         return `temp_${crypto.randomUUID()}`;
+    }
+
+    /**
+     * Ensure chat metadata references the cached messages array if available
+     * @private
+     * @param {Object} chat
+     * @returns {Object}
+     */
+    _storeChatMetadata(chat) {
+        if (!chat || !chat.id) return chat;
+
+        // If messages came down with the payload (e.g. optimistic chat), cache them
+        if (Array.isArray(chat.messages)) {
+            this._setChatMessages(chat.id, chat.messages);
+        }
+
+        const normalized = { ...chat };
+        const cachedMessages = this.state.messagesByChatId[chat.id];
+        if (cachedMessages) {
+            normalized.messages = cachedMessages;
+        } else {
+            delete normalized.messages;
+        }
+
+        if (typeof this.state.messagesLoadingByChatId[chat.id] === 'undefined') {
+            this.state.messagesLoadingByChatId[chat.id] = false;
+        }
+
+        this.state.chats[chat.id] = normalized;
+        return normalized;
+    }
+
+    /**
+     * Cache the messages array for a chat and keep references in sync
+     * @private
+     * @param {string} chatId
+     * @param {Object[]} messages
+     */
+    _setChatMessages(chatId, messages = []) {
+        this.state.messagesByChatId[chatId] = Array.isArray(messages) ? [...messages] : [];
+        if (this.state.chats[chatId]) {
+            this.state.chats[chatId].messages = this.state.messagesByChatId[chatId];
+        }
+    }
+
+    /**
+     * Ensure a chat has a mutable messages array in cache
+     * @private
+     * @param {string} chatId
+     * @returns {Object[]}
+     */
+    _ensureMessageCache(chatId) {
+        if (!chatId) return [];
+        if (!this.state.messagesByChatId[chatId]) {
+            this.state.messagesByChatId[chatId] = [];
+            if (this.state.chats[chatId]) {
+                this.state.chats[chatId].messages = this.state.messagesByChatId[chatId];
+            }
+        }
+        delete this.state.messagesErrorByChatId[chatId];
+        return this.state.messagesByChatId[chatId];
     }
 
     /**
@@ -198,6 +323,8 @@ class StateManager {
 
         // Update UI immediately
         this.state.chats[tempId] = optimisticChat;
+        this.state.messagesByChatId[tempId] = optimisticChat.messages;
+        this.state.messagesLoadingByChatId[tempId] = false;
         this.state.currentChatId = tempId;
         this._notify('chatCreated', optimisticChat);
         this._notify('currentChatChanged', optimisticChat);
@@ -228,10 +355,14 @@ class StateManager {
             // Migrate any messages that were added while waiting
             const pendingMessages = optimisticChat.messages || [];
             serverChat.messages = pendingMessages;
+            this._setChatMessages(serverChat.id, pendingMessages);
 
             // Replace optimistic chat with server chat
             delete this.state.chats[tempId];
-            this.state.chats[serverChat.id] = serverChat;
+            delete this.state.messagesByChatId[tempId];
+            delete this.state.messagesLoadingByChatId[tempId];
+            delete this.state.messagesErrorByChatId[tempId];
+            this._storeChatMetadata(serverChat);
 
             // Update currentChatId if it was still pointing to temp
             if (this.state.currentChatId === tempId) {
@@ -257,12 +388,150 @@ class StateManager {
 
     /**
      * Select a chat
-     * @param {string} chatId 
+     * @param {string} chatId
      */
     async selectChat(chatId) {
         if (this.state.chats[chatId]) {
             this.state.currentChatId = chatId;
             this._notify('currentChatChanged', this.state.chats[chatId]);
+            // Lazily load messages for the selected chat
+            this.loadMessages(chatId).catch(error => {
+                console.error('Failed to load chat messages:', error);
+            });
+        }
+    }
+
+    /**
+     * Ensure messages for a chat are loaded and cached
+     * @param {string} chatId
+     * @param {{ force?: boolean }} [options]
+     * @returns {Promise<Object[]>}
+     */
+    async loadMessages(chatId, options = {}) {
+        const { force = false } = options;
+        if (!chatId) return [];
+
+        const chat = this.state.chats[chatId];
+        if (!chat) {
+            return [];
+        }
+
+        if (chatId.startsWith('temp_')) {
+            return this._ensureMessageCache(chatId);
+        }
+
+        if (!force && this.isChatMessagesLoaded(chatId)) {
+            return this.state.messagesByChatId[chatId];
+        }
+
+        if (this._messageLoadPromises.has(chatId)) {
+            return this._messageLoadPromises.get(chatId);
+        }
+
+        const loadPromise = (async () => {
+            this.state.messagesLoadingByChatId[chatId] = true;
+            delete this.state.messagesErrorByChatId[chatId];
+            this._notify('messagesLoading', { chatId, isLoading: true });
+            try {
+                const messages = await repository.getMessages(chatId);
+                this._setChatMessages(chatId, messages || []);
+                const cached = this.state.messagesByChatId[chatId];
+                this._notify('messagesLoaded', { chatId, messages: cached });
+                return cached;
+            } catch (error) {
+                console.error('Failed to load messages:', error);
+                this.state.messagesErrorByChatId[chatId] = true;
+                this._notify('messagesError', { chatId, error });
+                throw error;
+            } finally {
+                this.state.messagesLoadingByChatId[chatId] = false;
+                this._notify('messagesLoading', { chatId, isLoading: false });
+                this._messageLoadPromises.delete(chatId);
+            }
+        })();
+
+        this._messageLoadPromises.set(chatId, loadPromise);
+        return loadPromise;
+    }
+
+    /**
+     * Load more chats for infinite scroll/pagination
+     * @returns {Promise<{chats: Object[], hasMore: boolean}>}
+     */
+    async loadMoreChats() {
+        if (this.state.isLoadingChats || !this.state.hasMoreChats) {
+            return { chats: [], hasMore: this.state.hasMoreChats };
+        }
+
+        this.state.isLoadingChats = true;
+        this._notify('chatsLoading', true);
+
+        try {
+            const result = await repository.getChats(null, {
+                limit: this.state.chatLimit,
+                offset: this.state.chatOffset,
+                projectId: this.state.currentProjectId,
+            });
+
+            // Append new chats to existing ones
+            for (const chat of result.chats) {
+                this._storeChatMetadata(chat);
+            }
+
+            // Update pagination state
+            this.state.chatOffset += result.chats.length;
+            this.state.hasMoreChats = result.hasMore;
+            this.state.isLoadingChats = false;
+
+            this._notify('chatsLoaded', result);
+            this._notify('chatsLoading', false);
+
+            return result;
+        } catch (error) {
+            console.error('Failed to load more chats:', error);
+            this.state.isLoadingChats = false;
+            this._notify('chatsLoading', false);
+            return { chats: [], hasMore: this.state.hasMoreChats };
+        }
+    }
+
+    /**
+     * Reset chat pagination and reload from beginning
+     * Used when switching projects or after searching
+     * @param {Object} [options] - Options for reloading
+     * @param {string} [options.projectId] - Project ID to filter by
+     * @returns {Promise<void>}
+     */
+    async reloadChats(options = {}) {
+        const { projectId = this.state.currentProjectId } = options;
+
+        this.state.isLoadingChats = true;
+        this._notify('chatsLoading', true);
+
+        try {
+            const result = await repository.getChats(null, {
+                limit: this.state.chatLimit,
+                offset: 0,
+                projectId,
+            });
+
+            // Replace existing chats (clear non-project chats when filtering by project)
+            this.state.chats = {};
+            for (const chat of result.chats) {
+                this._storeChatMetadata(chat);
+            }
+
+            // Reset pagination state
+            this.state.chatOffset = result.chats.length;
+            this.state.hasMoreChats = result.hasMore;
+            this.state.isLoadingChats = false;
+
+            this._notify('chatsReloaded', result);
+            this._notify('chatsLoading', false);
+        } catch (error) {
+            console.error('Failed to reload chats:', error);
+            this.state.isLoadingChats = false;
+            this._notify('chatsLoading', false);
         }
     }
 
@@ -285,6 +554,9 @@ class StateManager {
             ...updates,
             updatedAt: Date.now(),
         };
+        if (this.state.messagesByChatId[chatId]) {
+            updatedChat.messages = this.state.messagesByChatId[chatId];
+        }
         this.state.chats[chatId] = updatedChat;
 
         // Notify UI immediately
@@ -311,6 +583,10 @@ class StateManager {
 
         // IMMEDIATELY remove from local state (optimistic update)
         delete this.state.chats[chatId];
+        delete this.state.messagesByChatId[chatId];
+        delete this.state.messagesLoadingByChatId[chatId];
+        delete this.state.messagesErrorByChatId[chatId];
+        this._messageLoadPromises.delete(chatId);
 
         // If deleted current chat, switch to another immediately
         if (this.state.currentChatId === chatId) {
@@ -358,6 +634,8 @@ class StateManager {
             return null;
         }
 
+        const messageStore = this._ensureMessageCache(chatId);
+
         // Generate UUID client-side for instant optimistic updates
         const messageId = messageData.id || crypto.randomUUID();
         const optimisticMessage = {
@@ -367,7 +645,8 @@ class StateManager {
         };
 
         // IMMEDIATELY update local state (optimistic update)
-        chat.messages.push(optimisticMessage);
+        messageStore.push(optimisticMessage);
+        chat.messages = messageStore;
         chat.updatedAt = Date.now();
 
         // Notify listeners IMMEDIATELY so UI updates instantly
@@ -430,8 +709,14 @@ class StateManager {
             return null;
         }
 
+        const messages = this.state.messagesByChatId[chatId];
+        if (!messages) {
+            console.error('Messages not loaded in local state');
+            return null;
+        }
+
         // Find the message in the local array
-        const msgIndex = chat.messages.findIndex(m => m.id === messageId);
+        const msgIndex = messages.findIndex(m => m.id === messageId);
         if (msgIndex === -1) {
             console.error('Message not found in local state');
             return null;
@@ -439,10 +724,11 @@ class StateManager {
 
         // IMMEDIATELY update local state (optimistic update)
         const updatedMessage = {
-            ...chat.messages[msgIndex],
+            ...messages[msgIndex],
             ...updates,
         };
-        chat.messages[msgIndex] = updatedMessage;
+        messages[msgIndex] = updatedMessage;
+        chat.messages = messages;
         chat.updatedAt = Date.now();
 
         // Notify UI immediately
@@ -471,8 +757,11 @@ class StateManager {
         const chat = this.state.chats[this.state.currentChatId];
         if (!chat) return null;
 
+        const messages = this.state.messagesByChatId[this.state.currentChatId];
+        if (!messages) return null;
+
         // Find and update the message in memory
-        const message = chat.messages.find(m => m.id === messageId);
+        const message = messages.find(m => m.id === messageId);
         if (!message) return null;
 
         message.content = content;
@@ -537,8 +826,21 @@ class StateManager {
         this.state.currentProjectId = projectId;
         // Clear current chat when switching projects
         this.state.currentChatId = null;
+
+        // Reload chats with the new project filter
+        await this.reloadChats({ projectId });
+
+        // Select the first chat if available
+        const projectChats = this.allChats;
+        if (projectChats.length > 0) {
+            this.state.currentChatId = projectChats[0].id;
+            this.loadMessages(this.state.currentChatId).catch(error => {
+                console.error('Failed to load messages after project select:', error);
+            });
+        }
+
         this._notify('projectSelected', projectId);
-        this._notify('currentChatChanged', null);
+        this._notify('currentChatChanged', this.currentChat);
     }
 
     /**
@@ -708,6 +1010,10 @@ class StateManager {
         const success = await repository.clearAll();
         if (success) {
             this.state.chats = {};
+            this.state.messagesByChatId = {};
+            this.state.messagesLoadingByChatId = {};
+            this.state.messagesErrorByChatId = {};
+            this._messageLoadPromises.clear();
             this.state.currentChatId = null;
             const newChat = await this.createChat();
             this.state.currentChatId = newChat.id;
@@ -717,15 +1023,32 @@ class StateManager {
     }
 
     /**
-     * Search chats
-     * @param {string} query 
-     * @returns {Promise<Object[]>}
+     * Search chats with server-side pagination
+     * @param {string} query - Search query
+     * @param {Object} [options] - Search options
+     * @param {number} [options.limit] - Number of results to return
+     * @param {number} [options.offset] - Offset for pagination
+     * @returns {Promise<{chats: Object[], hasMore: boolean, total: number}>}
      */
-    async searchChats(query) {
+    async searchChats(query, options = {}) {
+        const { limit = this.state.chatLimit, offset = 0 } = options;
+
         if (!query.trim()) {
-            return this.allChats;
+            // Return cached chats if no search query
+            return {
+                chats: this.allChats,
+                hasMore: this.state.hasMoreChats,
+                total: Object.keys(this.state.chats).length,
+            };
         }
-        return repository.searchChats(query);
+
+        try {
+            const result = await repository.searchChats(query, null, { limit, offset });
+            return result;
+        } catch (error) {
+            console.error('Search failed:', error);
+            return { chats: [], hasMore: false, total: 0 };
+        }
     }
 }
 

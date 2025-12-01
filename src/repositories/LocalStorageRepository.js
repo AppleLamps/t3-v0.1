@@ -18,6 +18,12 @@ function generateId(prefix = '') {
     return `${prefix}${crypto.randomUUID()}`;
 }
 
+function stripMessages(chat) {
+    if (!chat) return chat;
+    const { messages, ...rest } = chat;
+    return { ...rest };
+}
+
 /**
  * LocalStorage implementation of BaseRepository
  */
@@ -81,9 +87,23 @@ export class LocalStorageRepository extends BaseRepository {
     // Chat Operations
     // ==================
 
-    async getChats(userId) {
-        const chats = this._get(STORAGE_KEYS.CHATS) || {};
-        return Object.values(chats).sort((a, b) => b.updatedAt - a.updatedAt);
+    async getChats(userId, options = {}) {
+        const { limit = 20, offset = 0, projectId = null } = options;
+        const allChats = this._get(STORAGE_KEYS.CHATS) || {};
+
+        // Filter and sort all chats
+        let filteredChats = Object.values(allChats);
+        if (projectId) {
+            filteredChats = filteredChats.filter(chat => chat.projectId === projectId);
+        }
+        filteredChats.sort((a, b) => b.updatedAt - a.updatedAt);
+
+        // Calculate pagination
+        const total = filteredChats.length;
+        const paginatedChats = filteredChats.slice(offset, offset + limit).map(stripMessages);
+        const hasMore = offset + paginatedChats.length < total;
+
+        return { chats: paginatedChats, hasMore, total };
     }
 
     async getChatById(chatId) {
@@ -140,14 +160,25 @@ export class LocalStorageRepository extends BaseRepository {
         return false;
     }
 
-    async searchChats(query, userId) {
-        const chats = await this.getChats(userId);
+    async searchChats(query, userId, options = {}) {
+        const { limit = 20, offset = 0 } = options;
+        const allChats = this._get(STORAGE_KEYS.CHATS) || {};
         const lowerQuery = query.toLowerCase();
 
-        return chats.filter(chat =>
-            chat.title.toLowerCase().includes(lowerQuery) ||
-            chat.messages.some(m => m.content.toLowerCase().includes(lowerQuery))
-        );
+        // Filter all chats by search query
+        const matchingChats = Object.values(allChats)
+            .filter(chat =>
+                chat.title.toLowerCase().includes(lowerQuery) ||
+                chat.messages.some(m => m.content.toLowerCase().includes(lowerQuery))
+            )
+            .sort((a, b) => b.updatedAt - a.updatedAt);
+
+        // Calculate pagination
+        const total = matchingChats.length;
+        const paginatedChats = matchingChats.slice(offset, offset + limit).map(stripMessages);
+        const hasMore = offset + paginatedChats.length < total;
+
+        return { chats: paginatedChats, hasMore, total };
     }
 
     // ==================
@@ -410,8 +441,8 @@ export class LocalStorageRepository extends BaseRepository {
     }
 
     async getProjectChats(projectId) {
-        const chats = await this.getChats();
-        return chats.filter(chat => chat.projectId === projectId);
+        const result = await this.getChats(null, { projectId, limit: 1000, offset: 0 });
+        return result.chats;
     }
 
     // ==================

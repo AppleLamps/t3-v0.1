@@ -277,9 +277,23 @@ export class MessageInput {
     _subscribeToState() {
         this._unsubscribers.push(
             stateManager.subscribe('settingsUpdated', () => this.refresh()),
-            stateManager.subscribe('streamingChanged', (state, isStreaming) => {
-                this._setDisabled(isStreaming);
+            stateManager.subscribe('streamingChanged', () => this._updateInputAvailability()),
+            stateManager.subscribe('currentChatChanged', () => this._updateInputAvailability()),
+            stateManager.subscribe('messagesLoading', (state, payload) => {
+                if (payload?.chatId === stateManager.currentChat?.id) {
+                    this._updateInputAvailability();
+                }
             }),
+            stateManager.subscribe('messagesLoaded', (state, payload) => {
+                if (payload?.chatId === stateManager.currentChat?.id) {
+                    this._updateInputAvailability();
+                }
+            }),
+            stateManager.subscribe('messagesError', (state, payload) => {
+                if (payload?.chatId === stateManager.currentChat?.id) {
+                    this._updateInputAvailability();
+                }
+            })
         );
     }
 
@@ -291,6 +305,7 @@ export class MessageInput {
             this._modelSelector.refresh();
         }
         this._updateWebSearchButton();
+        this._updateInputAvailability();
     }
 
     /**
@@ -392,6 +407,30 @@ export class MessageInput {
         }
         if (this.elements.attachBtn) {
             this.elements.attachBtn.disabled = disabled;
+        }
+    }
+
+    /**
+     * Update input availability based on streaming/loading state
+     * @private
+     */
+    _updateInputAvailability() {
+        const currentChatId = stateManager.currentChat?.id || null;
+        const isStreaming = stateManager.isStreaming;
+        const isLoadingMessages = currentChatId ? stateManager.isChatMessagesLoading(currentChatId) : false;
+        const hasLoadedMessages = currentChatId ? stateManager.isChatMessagesLoaded(currentChatId) : true;
+        const hasError = currentChatId ? stateManager.hasChatMessagesError(currentChatId) : false;
+        const shouldDisable = isStreaming || isLoadingMessages || !hasLoadedMessages || hasError;
+        this._setDisabled(shouldDisable);
+
+        if (this.elements.textarea) {
+            if (isLoadingMessages && currentChatId) {
+                this.elements.textarea.placeholder = 'Loading messages...';
+            } else if (hasError) {
+                this.elements.textarea.placeholder = 'Unable to load messages';
+            } else {
+                this.elements.textarea.placeholder = 'Type your message here...';
+            }
         }
     }
 

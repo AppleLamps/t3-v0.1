@@ -65,6 +65,20 @@
  */
 
 /**
+ * @typedef {Object} PaginationOptions
+ * @property {number} [limit=20] - Maximum number of items to return
+ * @property {number} [offset=0] - Number of items to skip
+ * @property {string} [projectId] - Optional project ID filter for chats
+ */
+
+/**
+ * @typedef {Object} PaginatedChatsResult
+ * @property {Chat[]} chats - Array of chats
+ * @property {boolean} hasMore - Whether there are more chats to load
+ * @property {number} total - Total number of chats
+ */
+
+/**
  * Base repository class - defines the interface for data access
  * @abstract
  */
@@ -74,11 +88,12 @@ export class BaseRepository {
     // ==================
 
     /**
-     * Get all chats for a user
+     * Get chats for a user with pagination support
      * @param {string} [userId] - Optional user ID filter
-     * @returns {Promise<Chat[]>}
+     * @param {PaginationOptions} [options] - Pagination options
+     * @returns {Promise<PaginatedChatsResult>} - Paginated result with chats, hasMore flag, and total count
      */
-    async getChats(userId) {
+    async getChats(userId, options = {}) {
         throw new Error('Method not implemented');
     }
 
@@ -120,12 +135,13 @@ export class BaseRepository {
     }
 
     /**
-     * Search chats by title or content
-     * @param {string} query 
-     * @param {string} [userId] 
-     * @returns {Promise<Chat[]>}
+     * Search chats by title or message content (server-side for Neon, client-side for localStorage)
+     * @param {string} query - Search query string
+     * @param {string} [userId] - Optional user ID filter
+     * @param {PaginationOptions} [options] - Pagination options
+     * @returns {Promise<PaginatedChatsResult>} - Paginated search results
      */
-    async searchChats(query, userId) {
+    async searchChats(query, userId, options = {}) {
         throw new Error('Method not implemented');
     }
 

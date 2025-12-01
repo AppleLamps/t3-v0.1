@@ -23,9 +23,13 @@ export class Sidebar {
             authBtnText: null,
             authBtnIcon: null,
             syncStatus: null,
+            loadMoreBtn: null,
         };
 
         this._unsubscribers = [];
+        this._searchDebounceTimer = null;
+        this._searchResults = null; // Store search results separately
+        this._isSearching = false;
 
         // Add lifecycle management for automatic cleanup
         mixinComponentLifecycle(this);
@@ -209,10 +213,12 @@ export class Sidebar {
             });
         }
 
-        // Search input
+        // Search input with debounce
         if (this.elements.searchInput) {
             this.on(this.elements.searchInput, 'input', (e) => {
-                this._onSearch(e.target.value);
+                this._handleDebouncedSearch(e.target.value);
+                // Also call external handler if set
+                if (this.onSearch) this.onSearch(e.target.value);
             });
         }
 
@@ -271,6 +277,12 @@ export class Sidebar {
             stateManager.subscribe('chatUpdated', () => this.renderThreads()),
             stateManager.subscribe('chatDeleted', () => this.renderThreads()),
             stateManager.subscribe('currentChatChanged', () => this.renderThreads()),
+            stateManager.subscribe('chatsLoaded', () => this.renderThreads()),
+            stateManager.subscribe('chatsReloaded', () => {
+                this._clearSearch();
+                this.renderThreads();
+            }),
+            stateManager.subscribe('chatsLoading', (state, isLoading) => this._updateLoadingState(isLoading)),
             stateManager.subscribe('projectCreated', () => this.renderProjects()),
             stateManager.subscribe('projectUpdated', () => this.renderProjects()),
             stateManager.subscribe('projectDeleted', () => this.renderProjects()),
@@ -379,9 +391,12 @@ export class Sidebar {
      * Render thread list
      */
     renderThreads() {
-        const chats = stateManager.allChats;
+        // Use search results if we're in search mode, otherwise use cached chats
+        const chats = this._searchResults || stateManager.allChats;
         const groups = groupByDate(chats);
         const currentChatId = stateManager.currentChat?.id;
+        const hasMore = !this._searchResults && stateManager.hasMoreChats;
+        const isLoading = stateManager.isLoadingChats;
 
         let html = '';
 
@@ -393,7 +408,7 @@ export class Sidebar {
                 const isActive = chat.id === currentChatId;
                 groupHtml += `
                     <div class="thread-item group relative">
-                        <button data-chat-id="${chat.id}" 
+                        <button data-chat-id="${chat.id}"
                             class="w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${isActive ? 'bg-lamp-card text-lamp-text' : 'text-lamp-muted hover:text-lamp-text hover:bg-lamp-card/50'}">
                             ${escapeHtml(chat.title)}
                         </button>
@@ -417,7 +432,155 @@ export class Sidebar {
         html += renderGroup(DATE_GROUPS.LAST_WEEK, groups[DATE_GROUPS.LAST_WEEK]);
         html += renderGroup(DATE_GROUPS.OLDER, groups[DATE_GROUPS.OLDER]);
 
+        // Add "Load More" button if there are more chats to load
+        if (hasMore || isLoading) {
+            html += `
+                <div class="px-3 py-3">
+                    <button id="loadMoreChatsBtn"
+                        class="w-full py-2 px-4 text-sm text-lamp-muted hover:text-lamp-text hover:bg-lamp-card/50 rounded-lg transition-colors flex items-center justify-center gap-2 ${isLoading ? 'opacity-50 cursor-wait' : ''}"
+                        ${isLoading ? 'disabled' : ''}>
+                        ${isLoading ? `
+                            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Loading...</span>
+                        ` : `
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                            <span>Load More</span>
+                        `}
+                    </button>
+                </div>
+            `;
+        }
+
+        // Show search indicator if in search mode
+        if (this._searchResults) {
+            const searchCount = this._searchResults.length;
+            html = `
+                <div class="px-3 py-2 text-xs text-lamp-muted border-b border-lamp-border mb-2">
+                    Found ${searchCount} chat${searchCount !== 1 ? 's' : ''}
+                    <button id="clearSearchBtn" class="ml-2 text-lamp-accent hover:underline">Clear</button>
+                </div>
+            ` + html;
+        }
+
         setHtml(this.elements.threadList, html || '<div class="px-3 py-8 text-center text-sm text-lamp-muted">No chats yet</div>');
+
+        // Re-cache and bind load more button
+        this._bindLoadMoreButton();
+        this._bindClearSearchButton();
+    }
+
+    /**
+     * Bind load more button click handler
+     * @private
+     */
+    _bindLoadMoreButton() {
+        const loadMoreBtn = document.getElementById('loadMoreChatsBtn');
+        if (loadMoreBtn && !stateManager.isLoadingChats) {
+            loadMoreBtn.addEventListener('click', () => this._onLoadMore());
+        }
+    }
+
+    /**
+     * Bind clear search button click handler
+     * @private
+     */
+    _bindClearSearchButton() {
+        const clearBtn = document.getElementById('clearSearchBtn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => this._clearSearch());
+        }
+    }
+
+    /**
+     * Handle load more button click
+     * @private
+     */
+    async _onLoadMore() {
+        await stateManager.loadMoreChats();
+    }
+
+    /**
+     * Update loading state in UI
+     * @private
+     * @param {boolean} isLoading
+     */
+    _updateLoadingState(isLoading) {
+        const loadMoreBtn = document.getElementById('loadMoreChatsBtn');
+        if (loadMoreBtn) {
+            loadMoreBtn.disabled = isLoading;
+            loadMoreBtn.classList.toggle('opacity-50', isLoading);
+            loadMoreBtn.classList.toggle('cursor-wait', isLoading);
+
+            if (isLoading) {
+                loadMoreBtn.innerHTML = `
+                    <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Loading...</span>
+                `;
+            } else {
+                loadMoreBtn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                    <span>Load More</span>
+                `;
+            }
+        }
+    }
+
+    /**
+     * Clear search and return to normal view
+     * @private
+     */
+    _clearSearch() {
+        this._searchResults = null;
+        this._isSearching = false;
+        if (this.elements.searchInput) {
+            this.elements.searchInput.value = '';
+        }
+        this.renderThreads();
+    }
+
+    /**
+     * Handle search with debounce for server-side search
+     * @private
+     * @param {string} query
+     */
+    async _handleDebouncedSearch(query) {
+        // Clear any existing debounce timer
+        if (this._searchDebounceTimer) {
+            clearTimeout(this._searchDebounceTimer);
+        }
+
+        // If query is empty, clear search
+        if (!query.trim()) {
+            this._clearSearch();
+            return;
+        }
+
+        // Debounce search (300ms delay)
+        this._searchDebounceTimer = setTimeout(async () => {
+            this._isSearching = true;
+
+            try {
+                const result = await stateManager.searchChats(query);
+                this._searchResults = result.chats;
+                this.renderThreads();
+            } catch (error) {
+                console.error('Search failed:', error);
+                this._searchResults = [];
+                this.renderThreads();
+            }
+
+            this._isSearching = false;
+        }, 300);
     }
 
     /**

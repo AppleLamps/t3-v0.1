@@ -39,11 +39,22 @@ function verifyToken(authHeader) {
 // Chat Operations
 // ==================
 
-async function getChats(userId, projectId = null) {
+async function getChats(userId, options = {}) {
     try {
+        const { projectId = null, limit = 20, offset = 0 } = options;
+
         let chats;
+        let totalCount;
+
         if (projectId) {
-            // Filter by project
+            // Get total count for hasMore calculation
+            const countResult = await sql`
+                SELECT COUNT(*) as count FROM chats
+                WHERE user_id = ${userId} AND project_id = ${projectId}
+            `;
+            totalCount = parseInt(countResult[0]?.count || 0, 10);
+
+            // Filter by project with pagination (metadata only)
             chats = await sql`
                 SELECT
                     c.id,
@@ -51,29 +62,21 @@ async function getChats(userId, projectId = null) {
                     c.project_id as "projectId",
                     c.created_at as "createdAt",
                     c.updated_at as "updatedAt",
-                    ${userId} as "userId",
-                    COALESCE(
-                        json_agg(
-                            json_build_object(
-                                'id', m.id,
-                                'role', m.role,
-                                'content', m.content,
-                                'model', m.model,
-                                'stats', m.stats,
-                                'generatedImages', m.generated_images,
-                                'createdAt', m.created_at
-                            ) ORDER BY m.created_at ASC
-                        ) FILTER (WHERE m.id IS NOT NULL),
-                        '[]'
-                    ) as messages
+                    ${userId} as "userId"
                 FROM chats c
-                LEFT JOIN messages m ON m.chat_id = c.id
                 WHERE c.user_id = ${userId} AND c.project_id = ${projectId}
-                GROUP BY c.id
                 ORDER BY c.updated_at DESC
+                LIMIT ${limit}
+                OFFSET ${offset}
             `;
         } else {
-            // Get all chats (no project filter)
+            // Get total count for hasMore calculation
+            const countResult = await sql`
+                SELECT COUNT(*) as count FROM chats WHERE user_id = ${userId}
+            `;
+            totalCount = parseInt(countResult[0]?.count || 0, 10);
+
+            // Get all chats (no project filter) with pagination (metadata only)
             chats = await sql`
                 SELECT
                     c.id,
@@ -81,30 +84,18 @@ async function getChats(userId, projectId = null) {
                     c.project_id as "projectId",
                     c.created_at as "createdAt",
                     c.updated_at as "updatedAt",
-                    ${userId} as "userId",
-                    COALESCE(
-                        json_agg(
-                            json_build_object(
-                                'id', m.id,
-                                'role', m.role,
-                                'content', m.content,
-                                'model', m.model,
-                                'stats', m.stats,
-                                'generatedImages', m.generated_images,
-                                'createdAt', m.created_at
-                            ) ORDER BY m.created_at ASC
-                        ) FILTER (WHERE m.id IS NOT NULL),
-                        '[]'
-                    ) as messages
+                    ${userId} as "userId"
                 FROM chats c
-                LEFT JOIN messages m ON m.chat_id = c.id
                 WHERE c.user_id = ${userId}
-                GROUP BY c.id
                 ORDER BY c.updated_at DESC
+                LIMIT ${limit}
+                OFFSET ${offset}
             `;
         }
 
-        return { data: chats, status: 200 };
+        const hasMore = offset + chats.length < totalCount;
+
+        return { data: { chats, hasMore, total: totalCount }, status: 200 };
     } catch (error) {
         console.error('Get chats error:', error);
         return { error: 'Failed to fetch chats', status: 500 };
@@ -222,36 +213,54 @@ async function deleteChat(userId, chatId) {
     }
 }
 
-async function searchChats(userId, query) {
+async function searchChats(userId, query, options = {}) {
     try {
+        const { limit = 20, offset = 0 } = options;
         const searchQuery = `%${query.toLowerCase()}%`;
 
+        // Get total count of matching chats for hasMore calculation
+        const countResult = await sql`
+            SELECT COUNT(*) as count
+            FROM chats c
+            WHERE c.user_id = ${userId}
+                AND (
+                    LOWER(c.title) LIKE ${searchQuery}
+                    OR EXISTS (
+                        SELECT 1 FROM messages m
+                        WHERE m.chat_id = c.id
+                            AND LOWER(m.content) LIKE ${searchQuery}
+                    )
+                )
+        `;
+        const totalCount = parseInt(countResult[0]?.count || 0, 10);
+
+        // Get paginated search results (metadata only)
         const chats = await sql`
-            SELECT DISTINCT ON (c.id)
+            SELECT
                 c.id,
                 c.title,
+                c.project_id as "projectId",
                 c.created_at as "createdAt",
                 c.updated_at as "updatedAt",
                 ${userId} as "userId"
             FROM chats c
-            LEFT JOIN messages m ON m.chat_id = c.id
             WHERE c.user_id = ${userId}
                 AND (
                     LOWER(c.title) LIKE ${searchQuery}
-                    OR LOWER(m.content) LIKE ${searchQuery}
+                    OR EXISTS (
+                        SELECT 1 FROM messages m
+                        WHERE m.chat_id = c.id
+                            AND LOWER(m.content) LIKE ${searchQuery}
+                    )
                 )
-            ORDER BY c.id, c.updated_at DESC
+            ORDER BY c.updated_at DESC
+            LIMIT ${limit}
+            OFFSET ${offset}
         `;
 
-        // Fetch messages for each chat
-        const chatsWithMessages = await Promise.all(
-            chats.map(async (chat) => {
-                const result = await getChatById(userId, chat.id);
-                return result.data || chat;
-            })
-        );
+        const hasMore = offset + chats.length < totalCount;
 
-        return { data: chatsWithMessages, status: 200 };
+        return { data: { chats, hasMore, total: totalCount }, status: 200 };
     } catch (error) {
         console.error('Search chats error:', error);
         return { error: 'Failed to search chats', status: 500 };
@@ -916,7 +925,11 @@ export default async function handler(req, res) {
     switch (action) {
         // Chat operations
         case 'getChats':
-            result = await getChats(userId, bodyData?.projectId);
+            result = await getChats(userId, {
+                projectId: bodyData?.projectId,
+                limit: bodyData?.limit || 20,
+                offset: bodyData?.offset || 0,
+            });
             break;
         case 'getChatById':
             result = await getChatById(userId, chatId);
@@ -931,7 +944,10 @@ export default async function handler(req, res) {
             result = await deleteChat(userId, chatId);
             break;
         case 'searchChats':
-            result = await searchChats(userId, bodyData?.query || '');
+            result = await searchChats(userId, bodyData?.query || '', {
+                limit: bodyData?.limit || 20,
+                offset: bodyData?.offset || 0,
+            });
             break;
 
         // Message operations
