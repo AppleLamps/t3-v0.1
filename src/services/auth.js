@@ -16,35 +16,28 @@ class AuthService {
     }
 
     /**
-     * Initialize auth service from stored token
+     * Initialize auth service from stored cookies
      * @returns {Promise<void>}
      */
     async initialize() {
         if (this._initialized) return;
 
-        const storedToken = localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN);
-        const storedUser = localStorage.getItem(STORAGE_KEYS.AUTH_USER);
+        try {
+            // Verify token from cookies
+            const result = await this._apiCall('/api/auth', {
+                action: 'verify',
+            });
 
-        if (storedToken && storedUser) {
-            this._token = storedToken;
-            this._user = JSON.parse(storedUser);
-
-            // Verify token is still valid
-            try {
-                const result = await this._apiCall('/api/auth', {
-                    action: 'verify',
-                    token: storedToken,
-                });
-
-                if (result.user) {
-                    this._user = result.user;
-                    this._saveToStorage();
-                }
-            } catch (error) {
-                // Token invalid, clear auth state
-                console.warn('Auth token invalid, clearing session');
-                this.logout();
+            if (result.user) {
+                this._user = result.user;
+                this._initialized = true;
+                this._notifyListeners();
             }
+        } catch (error) {
+            // No valid token in cookies or token invalid
+            console.log('No valid auth token found in cookies');
+            this._token = null;
+            this._user = null;
         }
 
         this._initialized = true;
@@ -101,9 +94,9 @@ class AuthService {
                 name,
             });
 
-            this._token = result.token;
+            // Tokens are now set via cookies by the server
             this._user = result.user;
-            this._saveToStorage();
+            this._token = 'cookie_auth'; // Placeholder - actual auth is via cookies
             this._notifyListeners();
 
             return { success: true, user: result.user };
@@ -126,9 +119,9 @@ class AuthService {
                 password,
             });
 
-            this._token = result.token;
+            // Tokens are now set via cookies by the server
             this._user = result.user;
-            this._saveToStorage();
+            this._token = 'cookie_auth'; // Placeholder - actual auth is via cookies
             this._notifyListeners();
 
             return { success: true, user: result.user };
@@ -140,11 +133,18 @@ class AuthService {
     /**
      * Log out current user
      */
-    logout() {
+    async logout() {
+        try {
+            await this._apiCall('/api/auth', {
+                action: 'logout',
+            });
+        } catch (error) {
+            // Log error but continue with logout
+            console.warn('Logout API call failed:', error.message);
+        }
+
         this._token = null;
         this._user = null;
-        localStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
-        localStorage.removeItem(STORAGE_KEYS.AUTH_USER);
         this._notifyListeners();
     }
 
@@ -181,26 +181,57 @@ class AuthService {
      * @returns {Promise<Object>}
      */
     async apiRequest(endpoint, body) {
-        if (!this._token) {
-            throw new Error('Not authenticated');
-        }
-
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this._token}`,
             },
+            credentials: 'include', // Include cookies for authentication
             body: JSON.stringify(body),
         });
 
         const data = await response.json();
 
         if (!response.ok) {
+            // Handle authentication errors
+            if (response.status === 401) {
+                // Token might be expired, try to refresh
+                try {
+                    await this.refreshToken();
+                    // Retry the original request
+                    return this.apiRequest(endpoint, body);
+                } catch (refreshError) {
+                    // Refresh failed, logout
+                    await this.logout();
+                    throw new Error('Authentication required');
+                }
+            }
             throw new Error(data.error || 'Request failed');
         }
 
         return data;
+    }
+
+    /**
+     * Refresh authentication token
+     * @returns {Promise<Object>}
+     */
+    async refreshToken() {
+        try {
+            const result = await this._apiCall('/api/auth', {
+                action: 'refresh',
+            });
+
+            // Token is refreshed via cookies by the server
+            this._user = result.user;
+            this._notifyListeners();
+
+            return { success: true, user: result.user };
+        } catch (error) {
+            // Refresh failed, logout
+            await this.logout();
+            throw new Error('Token refresh failed');
+        }
     }
 
     /**
@@ -216,6 +247,7 @@ class AuthService {
             headers: {
                 'Content-Type': 'application/json',
             },
+            credentials: 'include', // Include cookies for authentication
             body: JSON.stringify(body),
         });
 
@@ -226,17 +258,6 @@ class AuthService {
         }
 
         return data;
-    }
-
-    /**
-     * Save auth state to localStorage
-     * @private
-     */
-    _saveToStorage() {
-        if (this._token && this._user) {
-            localStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, this._token);
-            localStorage.setItem(STORAGE_KEYS.AUTH_USER, JSON.stringify(this._user));
-        }
     }
 
     /**
