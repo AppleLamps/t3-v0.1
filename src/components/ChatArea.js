@@ -30,6 +30,11 @@ export class ChatArea {
         this._pendingStreamContent = null;
         this._rafId = null;
 
+        // Track if this is initial render (to prevent fade-in animations on page load)
+        this._isInitialRender = true;
+        // Track rendered message IDs for incremental updates
+        this._renderedMessageIds = new Set();
+
         // Add lifecycle management for automatic cleanup
         mixinComponentLifecycle(this);
 
@@ -307,7 +312,8 @@ export class ChatArea {
             stateManager.subscribe('userUpdated', () => this._updateWelcomeName()),
             stateManager.subscribe('streamingChanged', (state, isStreaming) => {
                 if (!isStreaming) {
-                    // Streaming ended - cleanup and do a full re-render to show stats
+                    // Streaming ended - cleanup
+                    const streamingMsgId = this._streamingMessageId;
                     this._streamingMessageId = null;
                     this._streamingElement = null;
                     this._pendingStreamContent = null;
@@ -318,7 +324,11 @@ export class ChatArea {
                         this._rafId = null;
                     }
 
-                    this.renderMessages();
+                    // Convert the streaming element to a finalized message
+                    // Find the streaming node and update it with final content + stats
+                    if (streamingMsgId) {
+                        this._finalizeStreamingMessage(streamingMsgId);
+                    }
                 }
             }),
             stateManager.subscribe('messagesLoading', (state, payload) => {
@@ -345,90 +355,108 @@ export class ChatArea {
      */
     _onMessageAdded(data) {
         const msg = data?.message;
+        if (!msg) return;
 
-        // For streaming assistant messages, render all messages EXCEPT the streaming one,
-        // then append the streaming placeholder
-        if (msg?.role === 'assistant' && stateManager.isStreaming) {
+        // Ensure UI is in chat mode (not welcome screen)
+        this._ensureChatMode();
+
+        // For streaming assistant messages, append the streaming placeholder
+        if (msg.role === 'assistant' && stateManager.isStreaming) {
             this._streamingMessageId = msg.id;
-            // Render all messages except the last one (the empty assistant placeholder)
-            this._renderMessagesExceptLast();
-            // Then append the streaming placeholder (this hides typing indicator)
+            // Append the streaming placeholder (this hides typing indicator)
             this._appendStreamingMessage(msg);
             return;
         }
 
-        // For user messages during streaming, append and show typing indicator
-        if (msg?.role === 'user' && stateManager.isStreaming) {
-            this._appendUserMessage(msg);
-            this.showTypingIndicator();
+        // For user messages, append directly
+        if (msg.role === 'user') {
+            this._appendMessageToDom(msg, true); // true = animate
+            if (stateManager.isStreaming) {
+                this.showTypingIndicator();
+            }
             return;
         }
 
-        // For all other cases, do a full render
-        this.renderMessages();
+        // For non-streaming assistant messages, append directly
+        this._appendMessageToDom(msg, true);
     }
 
     /**
-     * Render all messages except the last one (used during streaming)
+     * Ensure UI is in chat mode (hide welcome screen, show messages container)
      * @private
      */
-    _renderMessagesExceptLast() {
-        const chat = stateManager.currentChat;
-
-        const messages = chat?.messages || stateManager.state.messagesByChatId[chat?.id] || [];
-        if (!chat || messages.length === 0) {
-            return;
-        }
-
-        // Show header, hide welcome screen
+    _ensureChatMode() {
         if (this._welcomeScreen) this._welcomeScreen.hide();
         if (this.elements.messagesContainer) this.elements.messagesContainer.classList.remove('hidden');
         if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
         if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
+        this._hideMessagesLoading();
+        this._hideMessagesError();
+    }
 
-        // Render all messages except the last one
-        const messagesToRender = messages.slice(0, -1);
+    /**
+     * Generate HTML for a single message
+     * @private
+     */
+    _generateMessageHtml(msg, animate = false) {
+        const isUser = msg.role === 'user';
+        const animateClass = animate ? ' animate-fade-in' : '';
 
-        let html = '';
-        for (const msg of messagesToRender) {
-            const isUser = msg.role === 'user';
-
-            if (isUser) {
-                html += `
-                    <div class="flex animate-fade-in justify-end">
-                        <div class="bg-lamp-accent text-white rounded-2xl px-4 py-2.5 max-w-[80%]">
-                            ${this._messageRenderer.renderUserMessageContent(msg)}
-                        </div>
+        if (isUser) {
+            return `
+                <div class="flex${animateClass} justify-end" data-message-id="${msg.id}">
+                    <div class="bg-lamp-accent text-white rounded-2xl px-4 py-2.5 max-w-[80%]">
+                        ${this._messageRenderer.renderUserMessageContent(msg)}
                     </div>
-                `;
-            } else {
-                const stats = msg.stats;
-                html += `
-                    <div class="group flex flex-col animate-fade-in">
-                        <div class="max-w-[80%]">
-                            ${this._messageRenderer.renderAssistantMessageContent(msg)}
-                        </div>
-                        <div class="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                            <button data-copy-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Copy">
-                                <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                                </svg>
-                            </button>
-                            <button data-regen-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Regenerate">
-                                <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                </svg>
-                            </button>
-                            ${this._messageRenderer.renderMessageStats(stats)}
-                        </div>
+                </div>
+            `;
+        } else {
+            const stats = msg.stats;
+            return `
+                <div class="group flex flex-col${animateClass}" data-message-id="${msg.id}">
+                    <div class="max-w-[80%]">
+                        ${this._messageRenderer.renderAssistantMessageContent(msg)}
                     </div>
-                `;
-            }
+                    <div class="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                        <button data-copy-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Copy">
+                            <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                            </svg>
+                        </button>
+                        <button data-regen-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Regenerate">
+                            <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                            </svg>
+                        </button>
+                        ${this._messageRenderer.renderMessageStats(stats)}
+                    </div>
+                </div>
+            `;
         }
+    }
 
-        setHtml(this.elements.messagesContainer, html);
-        processMessageContent(this.elements.messagesContainer);
-        scrollToBottom(this.elements.chatArea);
+    /**
+     * Append a single message to the DOM without rebuilding everything
+     * @private
+     */
+    _appendMessageToDom(msg, animate = false) {
+        if (!this.elements.messagesContainer || !msg) return;
+
+        // Skip if already rendered
+        if (this._renderedMessageIds.has(msg.id)) return;
+
+        const html = this._generateMessageHtml(msg, animate);
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html.trim();
+        const messageNode = tempDiv.firstChild;
+
+        if (messageNode) {
+            this.elements.messagesContainer.appendChild(messageNode);
+            this._renderedMessageIds.add(msg.id);
+            // Process only the new message node for code highlighting etc.
+            processMessageContent(messageNode);
+            scrollToBottom(this.elements.chatArea);
+        }
     }
 
     /**
@@ -437,11 +465,12 @@ export class ChatArea {
      */
     _onMessageUpdated(data) {
         const msg = data?.message;
+        if (!msg) return;
 
         // If we're currently streaming, only update the streaming element
         // DO NOT call renderMessages() which would rebuild the entire DOM
         if (this._streamingMessageId) {
-            if (msg?.id === this._streamingMessageId && this._streamingElement) {
+            if (msg.id === this._streamingMessageId && this._streamingElement) {
                 // Streaming update - just update the content efficiently
                 this._updateStreamingContent(msg.content);
             }
@@ -449,30 +478,37 @@ export class ChatArea {
             return;
         }
 
-        // Not streaming - do full render
-        this.renderMessages();
-    }
+        // Find the specific message node and update only its content
+        const messageNode = this.elements.messagesContainer?.querySelector(`[data-message-id="${msg.id}"]`);
+        if (messageNode) {
+            // Update the message content
+            const contentEl = messageNode.querySelector('.message-content');
+            if (contentEl && msg.role === 'assistant') {
+                contentEl.innerHTML = renderMarkdown(msg.content || '');
+                processMessageContent(messageNode);
+            }
 
-    /**
-     * Append a user message without full re-render
-     * @private
-     */
-    _appendUserMessage(msg) {
-        // Ensure messages container is visible (hide welcome screen if needed)
-        if (this.elements.welcomeScreen) this.elements.welcomeScreen.style.display = 'none';
-        if (this.elements.messagesContainer) this.elements.messagesContainer.classList.remove('hidden');
-        if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
-        if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
+            // Update stats for assistant messages
+            if (msg.role === 'assistant' && msg.stats) {
+                const actionsContainer = messageNode.querySelector('.flex.items-center.gap-3.mt-2');
+                if (actionsContainer) {
+                    // Find and update or add the stats div
+                    let statsEl = actionsContainer.querySelector('.flex.items-center.gap-4.text-xs');
+                    const newStatsHtml = this._messageRenderer.renderMessageStats(msg.stats);
+                    if (statsEl) {
+                        statsEl.outerHTML = newStatsHtml;
+                    } else if (newStatsHtml) {
+                        actionsContainer.insertAdjacentHTML('beforeend', newStatsHtml);
+                    }
+                }
+            }
+            return;
+        }
 
-        const html = `
-            <div class="flex animate-fade-in justify-end">
-                <div class="bg-lamp-accent text-white rounded-2xl px-4 py-2.5 max-w-[80%]">
-                    ${this._messageRenderer.renderUserMessageContent(msg)}
-                </div>
-            </div>
-        `;
-        this.elements.messagesContainer?.insertAdjacentHTML('beforeend', html);
-        scrollToBottom(this.elements.chatArea);
+        // Message not found in DOM - might be a new message, append it
+        if (!this._renderedMessageIds.has(msg.id)) {
+            this._appendMessageToDom(msg, false);
+        }
     }
 
     /**
@@ -484,7 +520,7 @@ export class ChatArea {
         this.hideTypingIndicator();
 
         const html = `
-            <div id="streaming-msg" class="group flex flex-col animate-fade-in">
+            <div id="streaming-msg" class="group flex flex-col animate-fade-in" data-message-id="${msg.id}">
                 <div class="max-w-[80%]">
                     <div class="message-content prose prose-sm max-w-none text-lamp-text"></div>
                 </div>
@@ -492,6 +528,7 @@ export class ChatArea {
         `;
         this.elements.messagesContainer?.insertAdjacentHTML('beforeend', html);
         this._streamingElement = document.querySelector('#streaming-msg .message-content');
+        this._renderedMessageIds.add(msg.id);
         scrollToBottom(this.elements.chatArea);
     }
 
@@ -521,9 +558,55 @@ export class ChatArea {
     }
 
     /**
-     * Refresh the chat area
+     * Finalize a streaming message by adding action buttons and stats
+     * @private
+     */
+    _finalizeStreamingMessage(msgId) {
+        const chat = stateManager.currentChat;
+        const messages = chat?.messages || stateManager.state.messagesByChatId[chat?.id] || [];
+        const msg = messages.find(m => m.id === msgId);
+
+        if (!msg) return;
+
+        // Find the streaming node
+        const streamingNode = this.elements.messagesContainer?.querySelector('#streaming-msg');
+        if (!streamingNode) return;
+
+        // Remove the streaming ID (no longer needed)
+        streamingNode.removeAttribute('id');
+
+        // Update content with final rendered markdown
+        const contentEl = streamingNode.querySelector('.message-content');
+        if (contentEl && msg.content) {
+            contentEl.innerHTML = renderMarkdown(msg.content);
+            processMessageContent(streamingNode);
+        }
+
+        // Add the action buttons and stats (they don't exist on streaming message)
+        const actionsHtml = `
+            <div class="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                <button data-copy-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Copy">
+                    <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                </button>
+                <button data-regen-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Regenerate">
+                    <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </button>
+                ${this._messageRenderer.renderMessageStats(msg.stats)}
+            </div>
+        `;
+        streamingNode.insertAdjacentHTML('beforeend', actionsHtml);
+    }
+
+    /**
+     * Refresh the chat area (called on chat switch)
      */
     refresh() {
+        // Reset tracking for new chat context
+        this._clearMessagesContainer();
         this._updateWelcomeName();
         this.renderMessages();
     }
@@ -566,13 +649,15 @@ export class ChatArea {
     }
 
     /**
-     * Render messages
+     * Render messages using incremental DOM updates
+     * Only adds/removes messages that changed, preserving existing DOM nodes
      */
     renderMessages() {
         const chat = stateManager.currentChat;
-        const user = stateManager.user;
 
         if (!chat) {
+            // No chat - show welcome screen
+            this._clearMessagesContainer();
             if (this._welcomeScreen) this._welcomeScreen.show();
             if (this.elements.messagesContainer) this.elements.messagesContainer.classList.add('hidden');
             this._hideMessagesLoading();
@@ -586,11 +671,13 @@ export class ChatArea {
         const hasError = stateManager.hasChatMessagesError(chat.id);
 
         if (hasError) {
+            this._clearMessagesContainer();
             this._showMessagesError();
             return;
         }
 
         if (!hasLoadedMessages || isLoadingMessages) {
+            this._clearMessagesContainer();
             this._showMessagesLoading();
             return;
         }
@@ -598,6 +685,7 @@ export class ChatArea {
         const messages = chat.messages || stateManager.state.messagesByChatId[chat.id] || [];
 
         if (messages.length === 0) {
+            this._clearMessagesContainer();
             if (this._welcomeScreen) this._welcomeScreen.show();
             if (this.elements.messagesContainer) this.elements.messagesContainer.classList.add('hidden');
             this._hideMessagesLoading();
@@ -606,60 +694,51 @@ export class ChatArea {
             return;
         }
 
-        this._hideMessagesLoading();
-        this._hideMessagesError();
-        // Show header, hide welcome screen (active chat mode)
-        if (this._welcomeScreen) this._welcomeScreen.hide();
-        if (this.elements.messagesContainer) this.elements.messagesContainer.classList.remove('hidden');
-        if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
-        if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
+        // Switch to chat mode
+        this._ensureChatMode();
 
-        let html = '';
-        for (const msg of messages) {
-            const isUser = msg.role === 'user';
+        // Create a set of current message IDs from state
+        const stateMessageIds = new Set(messages.map(m => m.id));
 
-            if (isUser) {
-                html += `
-                    <div class="flex animate-fade-in justify-end">
-                        <div class="bg-lamp-accent text-white rounded-2xl px-4 py-2.5 max-w-[80%]">
-                            ${this._messageRenderer.renderUserMessageContent(msg)}
-                        </div>
-                    </div>
-                `;
-            } else {
-                // Assistant message with hover actions
-                const stats = msg.stats;
-
-                html += `
-                    <div class="group flex flex-col animate-fade-in">
-                        <div class="max-w-[80%]">
-                            ${this._messageRenderer.renderAssistantMessageContent(msg)}
-                        </div>
-                        <div class="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                            <button data-copy-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Copy">
-                                <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                                </svg>
-                            </button>
-                            <button data-regen-msg="${msg.id}" class="p-1.5 hover:bg-lamp-input rounded-md transition-colors" title="Regenerate">
-                                <svg class="w-3.5 h-3.5 text-lamp-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                </svg>
-                            </button>
-                            ${this._messageRenderer.renderMessageStats(stats)}
-                        </div>
-                    </div>
-                `;
+        // Remove DOM nodes for messages no longer in state
+        const existingNodes = this.elements.messagesContainer?.querySelectorAll('[data-message-id]') || [];
+        for (const node of existingNodes) {
+            const msgId = node.getAttribute('data-message-id');
+            if (!stateMessageIds.has(msgId)) {
+                node.remove();
+                this._renderedMessageIds.delete(msgId);
             }
         }
 
-        setHtml(this.elements.messagesContainer, html);
+        // Append messages that are in state but not in DOM
+        // Don't animate on initial render to prevent cascading fade-ins
+        const shouldAnimate = !this._isInitialRender;
 
-        // Process markdown content (code highlighting, copy buttons)
-        processMessageContent(this.elements.messagesContainer);
+        for (const msg of messages) {
+            if (!this._renderedMessageIds.has(msg.id)) {
+                this._appendMessageToDom(msg, shouldAnimate);
+            }
+        }
+
+        // Mark initial render as complete
+        if (this._isInitialRender) {
+            this._isInitialRender = false;
+        }
 
         // Scroll to bottom
         scrollToBottom(this.elements.chatArea);
+    }
+
+    /**
+     * Clear the messages container and reset tracking
+     * @private
+     */
+    _clearMessagesContainer() {
+        if (this.elements.messagesContainer) {
+            this.elements.messagesContainer.innerHTML = '';
+        }
+        this._renderedMessageIds.clear();
+        this._isInitialRender = true;
     }
 
     /**
