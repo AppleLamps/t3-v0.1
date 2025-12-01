@@ -301,12 +301,19 @@ export class ChatArea {
             this._streamingMessageId = msg.id;
             // Render all messages except the last one (the empty assistant placeholder)
             this._renderMessagesExceptLast();
-            // Then append the streaming placeholder
+            // Then append the streaming placeholder (this hides typing indicator)
             this._appendStreamingMessage(msg);
             return;
         }
 
-        // For all other cases (user messages, etc.), do a full render
+        // For user messages during streaming, append and show typing indicator
+        if (msg?.role === 'user' && stateManager.isStreaming) {
+            this._appendUserMessage(msg);
+            this.showTypingIndicator();
+            return;
+        }
+
+        // For all other cases, do a full render
         this.renderMessages();
     }
 
@@ -323,7 +330,7 @@ export class ChatArea {
 
         // Show header, hide welcome screen
         if (this._welcomeScreen) this._welcomeScreen.hide();
-        if (this.elements.messagesContainer) this.elements.messagesContainer.style.display = 'block';
+        if (this.elements.messagesContainer) this.elements.messagesContainer.classList.remove('hidden');
         if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
         if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
 
@@ -401,7 +408,7 @@ export class ChatArea {
     _appendUserMessage(msg) {
         // Ensure messages container is visible (hide welcome screen if needed)
         if (this.elements.welcomeScreen) this.elements.welcomeScreen.style.display = 'none';
-        if (this.elements.messagesContainer) this.elements.messagesContainer.style.display = 'block';
+        if (this.elements.messagesContainer) this.elements.messagesContainer.classList.remove('hidden');
         if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
         if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
 
@@ -490,7 +497,7 @@ export class ChatArea {
         if (!chat || chat.messages.length === 0) {
             // Show welcome screen, hide header (T3-style: no header in empty state)
             if (this._welcomeScreen) this._welcomeScreen.show();
-            if (this.elements.messagesContainer) this.elements.messagesContainer.style.display = 'none';
+            if (this.elements.messagesContainer) this.elements.messagesContainer.classList.add('hidden');
             if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'none';
             if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'block';
             return;
@@ -498,7 +505,7 @@ export class ChatArea {
 
         // Show header, hide welcome screen (active chat mode)
         if (this._welcomeScreen) this._welcomeScreen.hide();
-        if (this.elements.messagesContainer) this.elements.messagesContainer.style.display = 'block';
+        if (this.elements.messagesContainer) this.elements.messagesContainer.classList.remove('hidden');
         if (this.elements.chatHeader) this.elements.chatHeader.style.display = 'flex';
         if (this.elements.floatingSettingsBtn) this.elements.floatingSettingsBtn.style.display = 'none';
 

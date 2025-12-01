@@ -213,9 +213,7 @@ export class ChatController {
                 })),
             };
 
-            // Show typing indicator IMMEDIATELY for instant UI feedback
-            // (before waiting for network request)
-            this.chatArea.showTypingIndicator();
+            // Set streaming state (typing indicator will show after user message renders)
             stateManager.setStreaming(true);
 
             // Ensure we have a current chat before adding messages

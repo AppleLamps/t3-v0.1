@@ -2,6 +2,7 @@
 // ============================
 
 import { marked } from 'marked';
+import { markedHighlight } from 'marked-highlight';
 import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 import { showCodeRenderer } from './codeRenderer.js';
@@ -10,8 +11,10 @@ import { showCodeRenderer } from './codeRenderer.js';
  * Configure marked with our settings
  */
 export function configureMarked() {
-    marked.setOptions({
-        highlight: function (code, lang) {
+    // Use marked-highlight extension for code highlighting
+    marked.use(markedHighlight({
+        langPrefix: 'hljs language-',
+        highlight(code, lang) {
             if (lang && hljs.getLanguage(lang)) {
                 try {
                     return hljs.highlight(code, { language: lang }).value;
@@ -25,11 +28,12 @@ export function configureMarked() {
                 console.warn('Auto highlight error:', e);
             }
             return code;
-        },
+        }
+    }));
+
+    marked.setOptions({
         breaks: true,
         gfm: true,
-        headerIds: false,
-        mangle: false,
     });
 
     // Configure DOMPurify to allow safe HTML elements used in code highlighting
