@@ -322,6 +322,25 @@ class StateManager {
         return this.state.messagesByChatId[chatId];
     }
 
+    _markChatSyncStatus(chatId, status, errorMessage = null) {
+        if (!chatId) return;
+        const chat = this.state.chats[chatId];
+        if (!chat) return;
+        chat._syncStatus = status;
+        chat._syncError = errorMessage;
+        this._notify('chatSyncStatusChanged', { chatId, status, error: errorMessage });
+    }
+
+    isChatSendBlocked(chatId) {
+        if (!chatId) return false;
+        return this.state.chats[chatId]?._syncStatus === 'error';
+    }
+
+    getChatSyncError(chatId) {
+        if (!chatId) return null;
+        return this.state.chats[chatId]?._syncError || null;
+    }
+
     /**
      * Create a new chat
      * Uses optimistic updates for instant UI response
@@ -343,6 +362,8 @@ class StateManager {
             createdAt: now,
             updatedAt: now,
             _isOptimistic: true, // Flag to track optimistic state
+            _syncStatus: 'pending',
+            _syncError: null,
         };
 
         // Update UI immediately
@@ -350,6 +371,7 @@ class StateManager {
         this.state.messagesByChatId[tempId] = optimisticChat.messages;
         this.state.messagesLoadingByChatId[tempId] = false;
         this.state.currentChatId = tempId;
+        this._markChatSyncStatus(tempId, 'pending');
         this._notify('chatCreated', optimisticChat);
         this._notify('currentChatChanged', optimisticChat);
 
@@ -387,6 +409,7 @@ class StateManager {
             delete this.state.messagesLoadingByChatId[tempId];
             delete this.state.messagesErrorByChatId[tempId];
             this._storeChatMetadata(serverChat);
+            this._markChatSyncStatus(serverChat.id, 'synced');
 
             // Update currentChatId if it was still pointing to temp
             let currentChatChanged = false;
@@ -414,8 +437,70 @@ class StateManager {
             console.error('Background chat sync failed:', error);
             this._pendingChatCreations.delete(tempId);
             resolveRealId(tempId); // Resolve with temp ID as fallback
+            const message = error?.message || 'Chat failed to save. Retry before sending more messages.';
+            this._markChatSyncStatus(tempId, 'error', message);
             // Keep the optimistic chat - user can still use it
             return optimisticChat;
+        }
+    }
+
+    async retryChatSync(chatId) {
+        if (!chatId) return null;
+        const chat = this.state.chats[chatId];
+        if (!chat || !chat.id.startsWith('temp_')) {
+            return null;
+        }
+        if (chat._syncStatus !== 'error') {
+            return null;
+        }
+
+        this._markChatSyncStatus(chatId, 'pending', null);
+
+        let resolveRealId;
+        const realIdPromise = new Promise(resolve => {
+            resolveRealId = resolve;
+        });
+        this._pendingChatCreations.set(chatId, realIdPromise);
+
+        const messages = [...(this.state.messagesByChatId[chatId] || [])];
+
+        try {
+            const serverChat = await repository.createChat({
+                title: chat.title || 'New Chat',
+                projectId: chat.projectId || null,
+                messages,
+            });
+
+            if (!serverChat || !serverChat.id) {
+                throw new Error('Server did not return a chat identifier');
+            }
+
+            serverChat.messages = messages;
+            this._setChatMessages(serverChat.id, messages);
+
+            delete this.state.chats[chatId];
+            delete this.state.messagesByChatId[chatId];
+            delete this.state.messagesLoadingByChatId[chatId];
+            delete this.state.messagesErrorByChatId[chatId];
+
+            this._storeChatMetadata(serverChat);
+            this._markChatSyncStatus(serverChat.id, 'synced');
+
+            if (this.state.currentChatId === chatId) {
+                this.state.currentChatId = serverChat.id;
+                this._notify('currentChatChanged', serverChat);
+            }
+
+            this._pendingChatCreations.delete(chatId);
+            resolveRealId(serverChat.id);
+            this._notify('chatIdResolved', { tempId: chatId, realId: serverChat.id, chat: serverChat });
+            this._notify('chatUpdated', serverChat);
+            return serverChat;
+        } catch (error) {
+            this._pendingChatCreations.delete(chatId);
+            const message = error?.message || 'Failed to save chat. Please try again.';
+            this._markChatSyncStatus(chatId, 'error', message);
+            throw error;
         }
     }
 
@@ -665,6 +750,11 @@ class StateManager {
         if (!chat) {
             console.error('Chat not found in local state');
             return null;
+        }
+
+        if (chat._syncStatus === 'error') {
+            const message = chat._syncError || 'Chat failed to save. Retry before sending more messages.';
+            throw new Error(message);
         }
 
         const messageStore = this._ensureMessageCache(chatId);

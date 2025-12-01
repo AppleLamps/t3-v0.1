@@ -6,9 +6,11 @@ import { getSettings, saveSettings, DEFAULT_MODELS } from './settings.js';
 
 export async function exportAll(userId) {
     try {
-        const chatsResult = await getChats(userId);
-        const userResult = await getUser(userId);
-        const settingsResult = await getSettings(userId);
+        const [chatsResult, userResult, settingsResult] = await Promise.all([
+            getChats(userId),
+            getUser(userId),
+            getSettings(userId),
+        ]);
 
         return {
             data: {

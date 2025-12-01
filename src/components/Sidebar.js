@@ -4,9 +4,13 @@
 import { stateManager } from '../services/state.js';
 import { authService } from '../services/auth.js';
 import { $, escapeHtml, setHtml } from '../utils/dom.js';
-import { groupByDate } from '../utils/date.js';
+import { groupByDate, getDateGroup } from '../utils/date.js';
 import { APP_NAME, DATE_GROUPS } from '../config/constants.js';
 import { mixinComponentLifecycle } from './Component.js';
+
+const THREAD_BUTTON_BASE = 'w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors';
+const THREAD_BUTTON_ACTIVE = 'bg-lamp-card text-lamp-text';
+const THREAD_BUTTON_INACTIVE = 'text-lamp-muted hover:text-lamp-text hover:bg-lamp-card/50';
 
 /**
  * Sidebar component - handles chat list and navigation
@@ -274,9 +278,13 @@ export class Sidebar {
     _subscribeToState() {
         this._unsubscribers.push(
             stateManager.subscribe('chatCreated', () => this.renderThreads()),
-            stateManager.subscribe('chatUpdated', () => this.renderThreads()),
+            stateManager.subscribe('chatUpdated', (state, chat) => this._handleChatUpdated(chat)),
             stateManager.subscribe('chatDeleted', () => this.renderThreads()),
-            stateManager.subscribe('currentChatChanged', () => this.renderThreads()),
+            stateManager.subscribe('currentChatChanged', () => {
+                if (!this._updateActiveChatHighlight()) {
+                    this.renderThreads();
+                }
+            }),
             stateManager.subscribe('chatsLoaded', () => this.renderThreads()),
             stateManager.subscribe('chatsReloaded', () => {
                 this._clearSearch();
@@ -402,14 +410,19 @@ export class Sidebar {
 
         const renderGroup = (title, chats) => {
             if (chats.length === 0) return '';
-            let groupHtml = `<div class="mb-3"><div class="px-3 py-1.5 text-xs font-medium text-lamp-muted">${title}</div>`;
+            let groupHtml = `
+                <div class="thread-group mb-3" data-thread-group="${title}">
+                    <div class="px-3 py-1.5 text-xs font-medium text-lamp-muted">${title}</div>
+                    <div class="thread-group-items" data-thread-group-items="${title}">
+            `;
 
             for (const chat of chats) {
                 const isActive = chat.id === currentChatId;
+                const buttonClass = this._composeThreadButtonClass(isActive);
                 groupHtml += `
-                    <div class="thread-item group relative">
-                        <button data-chat-id="${chat.id}"
-                            class="w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${isActive ? 'bg-lamp-card text-lamp-text' : 'text-lamp-muted hover:text-lamp-text hover:bg-lamp-card/50'}">
+                    <div class="thread-item group relative" data-thread-id="${chat.id}" data-thread-group="${title}" data-updated-at="${chat.updatedAt}">
+                        <button data-thread-button data-chat-id="${chat.id}"
+                            class="${buttonClass}">
                             ${escapeHtml(chat.title)}
                         </button>
                         <div class="thread-actions absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
@@ -423,7 +436,10 @@ export class Sidebar {
                 `;
             }
 
-            groupHtml += '</div>';
+            groupHtml += `
+                    </div>
+                </div>
+            `;
             return groupHtml;
         };
 
@@ -472,6 +488,95 @@ export class Sidebar {
         // Re-cache and bind load more button
         this._bindLoadMoreButton();
         this._bindClearSearchButton();
+    }
+
+    _composeThreadButtonClass(isActive) {
+        return `${THREAD_BUTTON_BASE} ${isActive ? THREAD_BUTTON_ACTIVE : THREAD_BUTTON_INACTIVE}`;
+    }
+
+    _setThreadButtonState(button, isActive) {
+        if (!button) return;
+        button.className = this._composeThreadButtonClass(isActive);
+    }
+
+    _handleChatUpdated(chat) {
+        if (!chat) return;
+
+        if (this._searchResults) {
+            const index = this._searchResults.findIndex(c => c.id === chat.id);
+            if (index !== -1) {
+                this._searchResults[index] = { ...this._searchResults[index], ...chat };
+                this.renderThreads();
+                return;
+            }
+        }
+
+        if (!this._updateThreadItem(chat)) {
+            this.renderThreads();
+        }
+    }
+
+    _updateThreadItem(chat) {
+        if (!this.elements.threadList || this._searchResults) {
+            return false;
+        }
+
+        const threadNode = this.elements.threadList.querySelector(`[data-thread-id="${chat.id}"]`);
+        if (!threadNode) {
+            return false;
+        }
+
+        const targetGroup = getDateGroup(chat.updatedAt);
+        if (threadNode.dataset.threadGroup !== targetGroup) {
+            return false;
+        }
+
+        threadNode.dataset.updatedAt = String(chat.updatedAt);
+
+        const button = threadNode.querySelector('[data-thread-button]');
+        if (button) {
+            button.textContent = chat.title || 'New Chat';
+            button.dataset.chatId = chat.id;
+            this._setThreadButtonState(button, chat.id === stateManager.currentChat?.id);
+        }
+
+        this._ensureThreadOrder(threadNode);
+        return true;
+    }
+
+    _ensureThreadOrder(threadNode) {
+        const container = threadNode.closest('[data-thread-group-items]');
+        if (!container) return;
+
+        const nodes = Array.from(container.querySelectorAll('.thread-item'));
+        nodes
+            .sort((a, b) => (Number(b.dataset.updatedAt) || 0) - (Number(a.dataset.updatedAt) || 0))
+            .forEach(node => container.appendChild(node));
+    }
+
+    _updateActiveChatHighlight() {
+        if (this._searchResults) {
+            this.renderThreads();
+            return true;
+        }
+
+        if (!this.elements.threadList) {
+            return false;
+        }
+
+        const currentChatId = stateManager.currentChat?.id || null;
+        const buttons = this.elements.threadList.querySelectorAll('[data-thread-button]');
+        let found = false;
+
+        buttons.forEach(button => {
+            const isActive = button.dataset.chatId === currentChatId;
+            if (isActive) {
+                found = true;
+            }
+            this._setThreadButtonState(button, isActive);
+        });
+
+        return found;
     }
 
     /**

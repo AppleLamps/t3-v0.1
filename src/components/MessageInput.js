@@ -293,7 +293,8 @@ export class MessageInput {
                 if (payload?.chatId === stateManager.currentChat?.id) {
                     this._updateInputAvailability();
                 }
-            })
+            }),
+            stateManager.subscribe('chatSyncStatusChanged', () => this._updateInputAvailability())
         );
     }
 
@@ -420,7 +421,8 @@ export class MessageInput {
         const isLoadingMessages = currentChatId ? stateManager.isChatMessagesLoading(currentChatId) : false;
         const hasLoadedMessages = currentChatId ? stateManager.isChatMessagesLoaded(currentChatId) : true;
         const hasError = currentChatId ? stateManager.hasChatMessagesError(currentChatId) : false;
-        const shouldDisable = isStreaming || isLoadingMessages || !hasLoadedMessages || hasError;
+        const isUnsaved = currentChatId ? stateManager.isChatSendBlocked(currentChatId) : false;
+        const shouldDisable = isStreaming || isLoadingMessages || !hasLoadedMessages || hasError || isUnsaved;
         this._setDisabled(shouldDisable);
 
         if (this.elements.textarea) {
@@ -428,6 +430,9 @@ export class MessageInput {
                 this.elements.textarea.placeholder = 'Loading messages...';
             } else if (hasError) {
                 this.elements.textarea.placeholder = 'Unable to load messages';
+            } else if (isUnsaved) {
+                const syncError = stateManager.getChatSyncError(currentChatId);
+                this.elements.textarea.placeholder = syncError || 'Chat failed to save. Retry to continue.';
             } else {
                 this.elements.textarea.placeholder = 'Type your message here...';
             }

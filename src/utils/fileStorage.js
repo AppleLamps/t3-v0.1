@@ -4,9 +4,13 @@
 // localStorage has ~5MB limit, while IndexedDB allows significantly larger storage
 
 const DB_NAME = 'LampChatFileStorage';
-const DB_VERSION = 2; // Bumped version for messages store
+const DB_VERSION = 3; // Bumped version for chat metadata store
 const FILE_STORE = 'files';
 const MESSAGE_STORE = 'messages';
+const CHAT_STORE = 'chats';
+const CHAT_UPDATED_INDEX = 'updatedAt';
+const CHAT_PROJECT_INDEX = 'projectId';
+const CHAT_PROJECT_UPDATED_INDEX = 'projectIdUpdatedAt';
 
 let dbPromise = null;
 
@@ -42,6 +46,26 @@ function openDB() {
             if (!db.objectStoreNames.contains(MESSAGE_STORE)) {
                 const msgStore = db.createObjectStore(MESSAGE_STORE, { keyPath: 'id' });
                 msgStore.createIndex('chatId', 'chatId', { unique: false });
+            }
+
+            if (!db.objectStoreNames.contains(CHAT_STORE)) {
+                const chatStore = db.createObjectStore(CHAT_STORE, { keyPath: 'id' });
+                chatStore.createIndex(CHAT_UPDATED_INDEX, 'updatedAt', { unique: false });
+                chatStore.createIndex(CHAT_PROJECT_INDEX, 'projectId', { unique: false });
+                chatStore.createIndex(CHAT_PROJECT_UPDATED_INDEX, ['projectId', 'updatedAt'], { unique: false });
+            } else {
+                const chatStore = event.target.transaction?.objectStore(CHAT_STORE);
+                if (chatStore) {
+                    if (!chatStore.indexNames.contains(CHAT_UPDATED_INDEX)) {
+                        chatStore.createIndex(CHAT_UPDATED_INDEX, 'updatedAt', { unique: false });
+                    }
+                    if (!chatStore.indexNames.contains(CHAT_PROJECT_INDEX)) {
+                        chatStore.createIndex(CHAT_PROJECT_INDEX, 'projectId', { unique: false });
+                    }
+                    if (!chatStore.indexNames.contains(CHAT_PROJECT_UPDATED_INDEX)) {
+                        chatStore.createIndex(CHAT_PROJECT_UPDATED_INDEX, ['projectId', 'updatedAt'], { unique: false });
+                    }
+                }
             }
         };
     });
@@ -414,4 +438,247 @@ export async function migrateMessagesToIndexedDB(chats) {
     }
 
     return migrated;
+}
+
+// ==================
+// Chat Metadata Operations
+// ==================
+
+function getProjectKeyRange(projectId) {
+    if (!projectId) return null;
+    return IDBKeyRange.bound(
+        [projectId, Number.NEGATIVE_INFINITY],
+        [projectId, Number.POSITIVE_INFINITY]
+    );
+}
+
+export async function saveChatMetadata(chatMeta) {
+    if (!chatMeta?.id) {
+        throw new Error('Chat metadata must include an id');
+    }
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([CHAT_STORE], 'readwrite');
+        const store = transaction.objectStore(CHAT_STORE);
+        const request = store.put(chatMeta);
+        request.onsuccess = () => resolve(chatMeta);
+        request.onerror = () => {
+            console.error('Failed to store chat metadata:', request.error);
+            reject(request.error);
+        };
+    });
+}
+
+export async function saveChatMetadataBatch(chats) {
+    if (!Array.isArray(chats) || chats.length === 0) {
+        return;
+    }
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([CHAT_STORE], 'readwrite');
+        const store = transaction.objectStore(CHAT_STORE);
+        let completed = 0;
+        const total = chats.length;
+        for (const chat of chats) {
+            const request = store.put(chat);
+            request.onsuccess = () => {
+                completed++;
+                if (completed === total) resolve();
+            };
+            request.onerror = () => {
+                console.error('Failed to batch store chat metadata:', request.error);
+                reject(request.error);
+            };
+        }
+    });
+}
+
+export async function getChatMetadata(chatId) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([CHAT_STORE], 'readonly');
+        const store = transaction.objectStore(CHAT_STORE);
+        const request = store.get(chatId);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => {
+            console.error('Failed to get chat metadata:', request.error);
+            reject(request.error);
+        };
+    });
+}
+
+export async function deleteChatMetadata(chatId) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([CHAT_STORE], 'readwrite');
+        const store = transaction.objectStore(CHAT_STORE);
+        const request = store.delete(chatId);
+        request.onsuccess = () => resolve(true);
+        request.onerror = () => {
+            console.error('Failed to delete chat metadata:', request.error);
+            reject(request.error);
+        };
+    });
+}
+
+export async function paginateChatMetadata(options = {}) {
+    const { limit = 20, offset = 0, projectId = null } = options;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([CHAT_STORE], 'readonly');
+        const store = transaction.objectStore(CHAT_STORE);
+        const index = projectId
+            ? store.index(CHAT_PROJECT_UPDATED_INDEX)
+            : store.index(CHAT_UPDATED_INDEX);
+        const keyRange = projectId ? getProjectKeyRange(projectId) : null;
+
+        const countRequest = index.count(keyRange);
+        countRequest.onerror = () => {
+            console.error('Failed to count chats:', countRequest.error);
+            reject(countRequest.error);
+        };
+
+        countRequest.onsuccess = () => {
+            const total = countRequest.result || 0;
+            if (total === 0) {
+                resolve({ items: [], total: 0 });
+                return;
+            }
+
+            const cursorRequest = index.openCursor(keyRange, 'prev');
+            const items = [];
+            let skipped = 0;
+            let settled = false;
+
+            cursorRequest.onerror = () => {
+                if (!settled) {
+                    console.error('Failed to iterate chats:', cursorRequest.error);
+                    settled = true;
+                    reject(cursorRequest.error);
+                }
+            };
+
+            cursorRequest.onsuccess = () => {
+                if (settled) return;
+                const cursor = cursorRequest.result;
+                if (!cursor) {
+                    settled = true;
+                    resolve({ items, total });
+                    return;
+                }
+
+                if (skipped < offset) {
+                    skipped++;
+                    cursor.continue();
+                    return;
+                }
+
+                if (items.length < limit) {
+                    items.push(cursor.value);
+                }
+
+                if (items.length >= limit) {
+                    settled = true;
+                    resolve({ items, total });
+                    return;
+                }
+
+                cursor.continue();
+            };
+        };
+    });
+}
+
+export async function getAllChatMetadata() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([CHAT_STORE], 'readonly');
+        const store = transaction.objectStore(CHAT_STORE);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => {
+            console.error('Failed to get chats:', request.error);
+            reject(request.error);
+        };
+    });
+}
+
+export async function getChatsByProject(projectId) {
+    if (!projectId) return [];
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([CHAT_STORE], 'readonly');
+        const store = transaction.objectStore(CHAT_STORE);
+        const index = store.index(CHAT_PROJECT_UPDATED_INDEX);
+        const keyRange = getProjectKeyRange(projectId);
+        const request = index.openCursor(keyRange, 'prev');
+        const items = [];
+
+        request.onerror = () => {
+            console.error('Failed to get project chats:', request.error);
+            reject(request.error);
+        };
+
+        request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) {
+                resolve(items);
+                return;
+            }
+            items.push(cursor.value);
+            cursor.continue();
+        };
+    });
+}
+
+export async function clearAllChatMetadata() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([CHAT_STORE], 'readwrite');
+        const store = transaction.objectStore(CHAT_STORE);
+        const request = store.clear();
+        request.onsuccess = () => resolve();
+        request.onerror = () => {
+            console.error('Failed to clear chat metadata:', request.error);
+            reject(request.error);
+        };
+    });
+}
+
+export async function unlinkProjectFromChats(projectId) {
+    if (!projectId) return;
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([CHAT_STORE], 'readwrite');
+        const store = transaction.objectStore(CHAT_STORE);
+        const index = store.index(CHAT_PROJECT_INDEX);
+        const request = index.openCursor(IDBKeyRange.only(projectId));
+
+        request.onerror = () => {
+            console.error('Failed to unlink project from chats:', request.error);
+            reject(request.error);
+        };
+
+        request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) {
+                resolve();
+                return;
+            }
+            const chat = { ...cursor.value, projectId: null };
+            cursor.update(chat);
+            cursor.continue();
+        };
+    });
+}
+
+export async function migrateChatMetadataToIndexedDB(chats) {
+    if (!chats || Object.keys(chats).length === 0) return false;
+    const chatArray = Object.values(chats).map(chat => {
+        const { messages, ...meta } = chat;
+        return meta;
+    });
+    if (chatArray.length === 0) return false;
+    await saveChatMetadataBatch(chatArray);
+    return true;
 }

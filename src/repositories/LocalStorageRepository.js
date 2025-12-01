@@ -9,8 +9,9 @@ import { STORAGE_KEYS } from '../config/constants.js';
 import { DEFAULT_MODEL, MODELS } from '../config/models.js';
 import * as fileStorage from '../utils/fileStorage.js';
 
-// Key for tracking if migration has been done
-const MIGRATION_KEY = 'lampchat_messages_migrated';
+// Keys for tracking migrations
+const MESSAGES_MIGRATION_KEY = 'lampchat_messages_migrated';
+const CHATS_MIGRATION_KEY = 'lampchat_chat_metadata_migrated';
 
 /**
  * Generate a unique ID using crypto.randomUUID()
@@ -43,9 +44,6 @@ export class LocalStorageRepository extends BaseRepository {
      * @private
      */
     _initializeStorage() {
-        if (!localStorage.getItem(STORAGE_KEYS.CHATS)) {
-            localStorage.setItem(STORAGE_KEYS.CHATS, JSON.stringify({}));
-        }
         if (!localStorage.getItem(STORAGE_KEYS.PROJECTS)) {
             localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify({}));
         }
@@ -66,8 +64,13 @@ export class LocalStorageRepository extends BaseRepository {
             }));
         }
 
-        // Run migration from localStorage messages to IndexedDB (once)
-        this._migrationPromise = this._migrateMessagesToIndexedDB();
+        // Run migrations from localStorage to IndexedDB (once)
+        this._migrationPromise = this._runMigrations();
+    }
+
+    async _runMigrations() {
+        await this._migrateMessagesToIndexedDB();
+        await this._migrateChatsToIndexedDB();
     }
 
     /**
@@ -77,7 +80,7 @@ export class LocalStorageRepository extends BaseRepository {
      */
     async _migrateMessagesToIndexedDB() {
         // Check if migration has already been done
-        if (localStorage.getItem(MIGRATION_KEY)) {
+        if (localStorage.getItem(MESSAGES_MIGRATION_KEY)) {
             return;
         }
 
@@ -100,9 +103,26 @@ export class LocalStorageRepository extends BaseRepository {
             }
 
             // Mark migration as complete
-            localStorage.setItem(MIGRATION_KEY, 'true');
+            localStorage.setItem(MESSAGES_MIGRATION_KEY, 'true');
         } catch (error) {
             console.error('Failed to migrate messages to IndexedDB:', error);
+        }
+    }
+
+    async _migrateChatsToIndexedDB() {
+        if (localStorage.getItem(CHATS_MIGRATION_KEY)) {
+            return;
+        }
+
+        try {
+            const chats = this._get(STORAGE_KEYS.CHATS);
+            if (chats && Object.keys(chats).length > 0) {
+                await fileStorage.migrateChatMetadataToIndexedDB(chats);
+            }
+            localStorage.removeItem(STORAGE_KEYS.CHATS);
+            localStorage.setItem(CHATS_MIGRATION_KEY, 'true');
+        } catch (error) {
+            console.error('Failed to migrate chat metadata to IndexedDB:', error);
         }
     }
 
@@ -144,27 +164,19 @@ export class LocalStorageRepository extends BaseRepository {
     async getChats(userId, options = {}) {
         await this._ensureMigrated();
         const { limit = 20, offset = 0, projectId = null } = options;
-        const allChats = this._get(STORAGE_KEYS.CHATS) || {};
-
-        // Filter and sort all chats
-        let filteredChats = Object.values(allChats);
-        if (projectId) {
-            filteredChats = filteredChats.filter(chat => chat.projectId === projectId);
-        }
-        filteredChats.sort((a, b) => b.updatedAt - a.updatedAt);
-
-        // Calculate pagination
-        const total = filteredChats.length;
-        const paginatedChats = filteredChats.slice(offset, offset + limit).map(stripMessages);
-        const hasMore = offset + paginatedChats.length < total;
-
-        return { chats: paginatedChats, hasMore, total };
+        const { items, total } = await fileStorage.paginateChatMetadata({
+            limit,
+            offset,
+            projectId,
+        });
+        const chats = items.map(stripMessages);
+        const hasMore = offset + chats.length < total;
+        return { chats, hasMore, total };
     }
 
     async getChatById(chatId) {
         await this._ensureMigrated();
-        const chats = this._get(STORAGE_KEYS.CHATS) || {};
-        const chatMeta = chats[chatId];
+        const chatMeta = await fileStorage.getChatMetadata(chatId);
 
         if (!chatMeta) return null;
 
@@ -179,7 +191,6 @@ export class LocalStorageRepository extends BaseRepository {
 
     async createChat(chatData) {
         await this._ensureMigrated();
-        const chats = this._get(STORAGE_KEYS.CHATS) || {};
         const now = Date.now();
 
         const chat = {
@@ -206,8 +217,7 @@ export class LocalStorageRepository extends BaseRepository {
         }
 
         // Only store metadata in localStorage
-        chats[chat.id] = chatMeta;
-        this._set(STORAGE_KEYS.CHATS, chats);
+        await fileStorage.saveChatMetadata(chatMeta);
 
         // Return full chat with messages for immediate use
         return { ...chatMeta, messages: messages || [] };
@@ -215,9 +225,9 @@ export class LocalStorageRepository extends BaseRepository {
 
     async updateChat(chatId, updates) {
         await this._ensureMigrated();
-        const chats = this._get(STORAGE_KEYS.CHATS) || {};
+        const existing = await fileStorage.getChatMetadata(chatId);
 
-        if (!chats[chatId]) {
+        if (!existing) {
             throw new Error(`Chat ${chatId} not found`);
         }
 
@@ -237,29 +247,27 @@ export class LocalStorageRepository extends BaseRepository {
             metaUpdates.messageCount = messages.length;
         }
 
-        chats[chatId] = {
-            ...chats[chatId],
+        const updatedMeta = {
+            ...existing,
             ...metaUpdates,
             updatedAt: Date.now(),
         };
 
-        this._set(STORAGE_KEYS.CHATS, chats);
+        await fileStorage.saveChatMetadata(updatedMeta);
 
         // Return full chat with messages
         const allMessages = await fileStorage.getMessagesByChat(chatId);
-        return { ...chats[chatId], messages: allMessages };
+        return { ...updatedMeta, messages: allMessages };
     }
 
     async deleteChat(chatId) {
         await this._ensureMigrated();
-        const chats = this._get(STORAGE_KEYS.CHATS) || {};
+        const existing = await fileStorage.getChatMetadata(chatId);
 
-        if (chats[chatId]) {
+        if (existing) {
             // Delete messages from IndexedDB
             await fileStorage.deleteMessagesByChat(chatId);
-
-            delete chats[chatId];
-            this._set(STORAGE_KEYS.CHATS, chats);
+            await fileStorage.deleteChatMetadata(chatId);
             return true;
         }
 
@@ -269,11 +277,11 @@ export class LocalStorageRepository extends BaseRepository {
     async searchChats(query, userId, options = {}) {
         await this._ensureMigrated();
         const { limit = 20, offset = 0 } = options;
-        const allChats = this._get(STORAGE_KEYS.CHATS) || {};
+        const allChats = await fileStorage.getAllChatMetadata();
         const lowerQuery = query.toLowerCase();
 
         // Search through chats and their messages
-        const matchingChatPromises = Object.values(allChats).map(async (chatMeta) => {
+        const matchingChatPromises = allChats.map(async (chatMeta) => {
             // Check title first
             if (chatMeta.title.toLowerCase().includes(lowerQuery)) {
                 return chatMeta;
@@ -307,9 +315,9 @@ export class LocalStorageRepository extends BaseRepository {
 
     async addMessage(chatId, messageData) {
         await this._ensureMigrated();
-        const chats = this._get(STORAGE_KEYS.CHATS) || {};
+        const chatMeta = await fileStorage.getChatMetadata(chatId);
 
-        if (!chats[chatId]) {
+        if (!chatMeta) {
             throw new Error(`Chat ${chatId} not found`);
         }
 
@@ -326,18 +334,21 @@ export class LocalStorageRepository extends BaseRepository {
         await fileStorage.storeMessage(message);
 
         // Update metadata in localStorage
-        chats[chatId].messageCount = (chats[chatId].messageCount || 0) + 1;
-        chats[chatId].updatedAt = Date.now();
-        this._set(STORAGE_KEYS.CHATS, chats);
+        const updatedMeta = {
+            ...chatMeta,
+            messageCount: (chatMeta.messageCount || 0) + 1,
+            updatedAt: Date.now(),
+        };
+        await fileStorage.saveChatMetadata(updatedMeta);
 
         return message;
     }
 
     async updateMessage(chatId, messageId, updates) {
         await this._ensureMigrated();
-        const chats = this._get(STORAGE_KEYS.CHATS) || {};
+        const chatMeta = await fileStorage.getChatMetadata(chatId);
 
-        if (!chats[chatId]) {
+        if (!chatMeta) {
             throw new Error(`Chat ${chatId} not found`);
         }
 
@@ -349,8 +360,10 @@ export class LocalStorageRepository extends BaseRepository {
         }
 
         // Update chat timestamp
-        chats[chatId].updatedAt = Date.now();
-        this._set(STORAGE_KEYS.CHATS, chats);
+        await fileStorage.saveChatMetadata({
+            ...chatMeta,
+            updatedAt: Date.now(),
+        });
 
         return updatedMessage;
     }
@@ -484,17 +497,7 @@ export class LocalStorageRepository extends BaseRepository {
             this._set(STORAGE_KEYS.PROJECTS, projects);
 
             // Also unlink any chats associated with this project
-            const chats = this._get(STORAGE_KEYS.CHATS) || {};
-            let updated = false;
-            for (const chatId in chats) {
-                if (chats[chatId].projectId === projectId) {
-                    chats[chatId].projectId = null;
-                    updated = true;
-                }
-            }
-            if (updated) {
-                this._set(STORAGE_KEYS.CHATS, chats);
-            }
+            await fileStorage.unlinkProjectFromChats(projectId);
 
             return true;
         }
@@ -567,8 +570,9 @@ export class LocalStorageRepository extends BaseRepository {
     }
 
     async getProjectChats(projectId) {
-        const result = await this.getChats(null, { projectId, limit: 1000, offset: 0 });
-        return result.chats;
+        await this._ensureMigrated();
+        const chats = await fileStorage.getChatsByProject(projectId);
+        return chats.map(stripMessages);
     }
 
     // ==================
@@ -577,14 +581,12 @@ export class LocalStorageRepository extends BaseRepository {
 
     async exportAll(userId) {
         await this._ensureMigrated();
-        const chatsMeta = this._get(STORAGE_KEYS.CHATS) || {};
-
-        // Reconstruct full chats with messages from IndexedDB for export
+        const metaList = await fileStorage.getAllChatMetadata();
         const fullChats = {};
-        for (const chatId in chatsMeta) {
-            const messages = await fileStorage.getMessagesByChat(chatId);
-            fullChats[chatId] = {
-                ...chatsMeta[chatId],
+        for (const chatMeta of metaList) {
+            const messages = await fileStorage.getMessagesByChat(chatMeta.id);
+            fullChats[chatMeta.id] = {
+                ...chatMeta,
                 messages: messages || [],
             };
         }
@@ -603,13 +605,14 @@ export class LocalStorageRepository extends BaseRepository {
         try {
             if (data.chats) {
                 // Separate messages and metadata
-                const chatsMeta = {};
+                const metaList = [];
                 for (const chatId in data.chats) {
                     const { messages, ...meta } = data.chats[chatId];
-                    chatsMeta[chatId] = {
+                    const chatMeta = {
                         ...meta,
                         messageCount: messages ? messages.length : 0,
                     };
+                    metaList.push(chatMeta);
 
                     // Store messages in IndexedDB
                     if (messages && messages.length > 0) {
@@ -620,7 +623,7 @@ export class LocalStorageRepository extends BaseRepository {
                         await fileStorage.storeMessages(messagesWithChatId);
                     }
                 }
-                this._set(STORAGE_KEYS.CHATS, chatsMeta);
+                await fileStorage.saveChatMetadataBatch(metaList);
             }
             if (data.projects) {
                 this._set(STORAGE_KEYS.PROJECTS, data.projects);
@@ -642,13 +645,14 @@ export class LocalStorageRepository extends BaseRepository {
         // Clear files and messages from IndexedDB
         await fileStorage.clearAllFiles();
         await fileStorage.clearAllMessages();
+        await fileStorage.clearAllChatMetadata();
 
         // Clear localStorage
-        localStorage.removeItem(STORAGE_KEYS.CHATS);
         localStorage.removeItem(STORAGE_KEYS.PROJECTS);
         localStorage.removeItem(STORAGE_KEYS.USER);
         localStorage.removeItem(STORAGE_KEYS.SETTINGS);
-        localStorage.removeItem(MIGRATION_KEY);
+        localStorage.removeItem(MESSAGES_MIGRATION_KEY);
+        localStorage.removeItem(CHATS_MIGRATION_KEY);
         this._initializeStorage();
         return true;
     }

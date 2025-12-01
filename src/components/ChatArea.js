@@ -10,6 +10,8 @@ import { WelcomeScreen } from './chat/WelcomeScreen.js';
 import { PromptSelector } from './chat/PromptSelector.js';
 import { mixinComponentLifecycle } from './Component.js';
 
+const MARKDOWN_CACHE_LIMIT = 200;
+
 /**
  * Chat area component - displays messages and welcome screen
  */
@@ -50,6 +52,7 @@ export class ChatArea {
         this._typingIndicator = null;
         this._welcomeScreen = null;
         this._promptSelector = null;
+        this._markdownCache = new Map();
     }
 
     /**
@@ -105,6 +108,17 @@ export class ChatArea {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                     </svg>
                 </button>
+
+                <!-- Chat Sync Status Banner -->
+                <div id="chatSyncBanner" class="hidden max-w-4xl mx-auto px-4 pt-20 md:pt-6">
+                    <div class="flex flex-col md:flex-row items-start md:items-center gap-3 bg-red-500/10 border border-red-500/40 text-red-100 rounded-xl px-4 py-3">
+                        <div class="flex-1 text-sm" id="chatSyncBannerText"></div>
+                        <div class="flex gap-2 w-full md:w-auto">
+                            <button id="retryChatSyncBtn" class="flex-1 md:flex-none px-3 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">Retry Save</button>
+                            <button id="discardUnsavedChatBtn" class="flex-1 md:flex-none px-3 py-2 text-sm bg-lamp-card text-lamp-text border border-lamp-border rounded-lg hover:bg-lamp-input transition-colors">Discard Chat</button>
+                        </div>
+                    </div>
+                </div>
                 
                 <!-- Welcome Screen -->
                 <div id="welcomeScreen" class="h-full flex flex-col items-center justify-center p-8">
@@ -156,6 +170,10 @@ export class ChatArea {
         this.elements.welcomeName = $('welcomeName');
         this.elements.suggestedPrompts = $('suggestedPrompts');
         this.elements.floatingSettingsBtn = $('floatingSettingsBtn');
+        this.elements.chatSyncBanner = $('chatSyncBanner');
+        this.elements.chatSyncBannerText = $('chatSyncBannerText');
+        this.elements.retryChatSyncBtn = $('retryChatSyncBtn');
+        this.elements.discardUnsavedChatBtn = $('discardUnsavedChatBtn');
     }
 
     /**
@@ -225,6 +243,27 @@ export class ChatArea {
         if (floatingSettingsBtn) {
             this.on(floatingSettingsBtn, 'click', () => {
                 if (this.onSettingsClick) this.onSettingsClick();
+            });
+        }
+
+        if (this.elements.retryChatSyncBtn) {
+            this.on(this.elements.retryChatSyncBtn, 'click', async () => {
+                const chatId = stateManager.currentChat?.id;
+                if (!chatId) return;
+                try {
+                    await stateManager.retryChatSync(chatId);
+                } catch (error) {
+                    alert(error.message || 'Retry failed.');
+                }
+            });
+        }
+
+        if (this.elements.discardUnsavedChatBtn) {
+            this.on(this.elements.discardUnsavedChatBtn, 'click', () => {
+                const chatId = stateManager.currentChat?.id;
+                if (chatId) {
+                    stateManager.deleteChat(chatId);
+                }
             });
         }
 
@@ -321,6 +360,7 @@ export class ChatArea {
             stateManager.subscribe('messageAdded', (state, data) => this._onMessageAdded(data)),
             stateManager.subscribe('messageUpdated', (state, data) => this._onMessageUpdated(data)),
             stateManager.subscribe('userUpdated', () => this._updateWelcomeName()),
+            stateManager.subscribe('chatSyncStatusChanged', () => this._updateSyncBanner()),
             stateManager.subscribe('streamingChanged', (state, isStreaming) => {
                 if (!isStreaming) {
                     // Streaming ended - cleanup
@@ -496,7 +536,7 @@ export class ChatArea {
             // Update the message content
             const contentEl = messageNode.querySelector('.message-content');
             if (contentEl && msg.role === 'assistant') {
-                contentEl.innerHTML = renderMarkdown(msg.content || '');
+                contentEl.innerHTML = this._getRenderedMarkdown(msg.content || '');
                 processMessageContent(messageNode);
             }
 
@@ -521,6 +561,28 @@ export class ChatArea {
         if (!this._renderedMessageIds.has(msg.id)) {
             this._appendMessageToDom(msg, false);
         }
+    }
+
+    _getRenderedMarkdown(content = '', { cache = true } = {}) {
+        const key = content || '';
+        if (!cache) {
+            return renderMarkdown(key);
+        }
+
+        if (this._markdownCache.has(key)) {
+            const cached = this._markdownCache.get(key);
+            this._markdownCache.delete(key);
+            this._markdownCache.set(key, cached);
+            return cached;
+        }
+
+        const html = renderMarkdown(key);
+        this._markdownCache.set(key, html);
+        if (this._markdownCache.size > MARKDOWN_CACHE_LIMIT) {
+            const oldestKey = this._markdownCache.keys().next().value;
+            this._markdownCache.delete(oldestKey);
+        }
+        return html;
     }
 
     /**
@@ -578,7 +640,7 @@ export class ChatArea {
                 return;
             }
 
-            this._streamingElement.innerHTML = renderMarkdown(this._streamingRawContent);
+            this._streamingElement.innerHTML = this._getRenderedMarkdown(this._streamingRawContent, { cache: false });
             scrollToBottom(this.elements.chatArea);
         });
     }
@@ -611,7 +673,7 @@ export class ChatArea {
         // Update content with final rendered markdown
         const contentEl = streamingNode.querySelector('.message-content');
         if (contentEl && msg.content) {
-            contentEl.innerHTML = renderMarkdown(msg.content);
+            contentEl.innerHTML = this._getRenderedMarkdown(msg.content);
             processMessageContent(streamingNode);
         }
 
@@ -640,6 +702,7 @@ export class ChatArea {
     refresh() {
         // Reset tracking for new chat context
         this._updateWelcomeName();
+        this._updateSyncBanner();
         this.renderMessages();
     }
 
@@ -678,6 +741,42 @@ export class ChatArea {
         if (this._welcomeScreen) {
             this._welcomeScreen.updateName(user?.name);
         }
+    }
+
+    _updateSyncBanner() {
+        const banner = this.elements.chatSyncBanner;
+        if (!banner) return;
+        const chat = stateManager.currentChat;
+        const textEl = this.elements.chatSyncBannerText;
+        const retryBtn = this.elements.retryChatSyncBtn;
+        const discardBtn = this.elements.discardUnsavedChatBtn;
+
+        if (!chat) {
+            banner.classList.add('hidden');
+            return;
+        }
+
+        if (chat._syncStatus === 'error') {
+            banner.classList.remove('hidden');
+            if (textEl) {
+                textEl.textContent = chat._syncError || 'Chat failed to save. Retry or discard to continue.';
+            }
+            retryBtn?.classList.remove('hidden');
+            discardBtn?.classList.remove('hidden');
+            return;
+        }
+
+        if (chat._syncStatus === 'pending' && chat.id.startsWith('temp_')) {
+            banner.classList.remove('hidden');
+            if (textEl) {
+                textEl.textContent = 'Saving chat...';
+            }
+            retryBtn?.classList.add('hidden');
+            discardBtn?.classList.add('hidden');
+            return;
+        }
+
+        banner.classList.add('hidden');
     }
 
     /**
