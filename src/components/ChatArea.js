@@ -34,6 +34,11 @@ export class ChatArea {
 
         this._streamingRawContent = '';
         this._streamingLastLength = 0;
+        this._streamingStableIndex = 0;
+        this._streamingScanIndex = 0;
+        this._streamingInFence = false;
+        this._streamingTailNode = null;
+        this._streamingTailText = '';
 
         this._virtualWindowSize = 100;
 
@@ -368,6 +373,11 @@ export class ChatArea {
                     this._streamingMessageId = null;
                     this._streamingElement = null;
                     this._pendingStreamContent = null;
+                    this._streamingTailNode = null;
+                    this._streamingTailText = '';
+                    this._streamingStableIndex = 0;
+                    this._streamingScanIndex = 0;
+                    this._streamingInFence = false;
 
                     // Cancel any pending animation frame
                     if (this._rafId) {
@@ -605,6 +615,11 @@ export class ChatArea {
         this._renderedMessageIds.add(msg.id);
         this._streamingRawContent = '';
         this._streamingLastLength = 0;
+        this._streamingStableIndex = 0;
+        this._streamingScanIndex = 0;
+        this._streamingInFence = false;
+        this._streamingTailNode = null;
+        this._streamingTailText = '';
         scrollToBottom(this.elements.chatArea);
     }
 
@@ -624,32 +639,102 @@ export class ChatArea {
             this._rafId = null;
             if (!this._pendingStreamContent || !this._streamingElement) return;
 
-            const prev = this._streamingRawContent || '';
-            const next = this._pendingStreamContent;
-            const prevLen = prev.length;
-            const diff = next.slice(prevLen);
-
-            this._streamingRawContent = next;
-            this._streamingLastLength = next.length;
-
-            const needsFull = this._requiresFullMarkdownRender(diff);
-
-            if (!needsFull && diff) {
-                this._streamingElement.appendChild(document.createTextNode(diff));
-                scrollToBottom(this.elements.chatArea);
-                return;
-            }
-
-            this._streamingElement.innerHTML = this._getRenderedMarkdown(this._streamingRawContent, { cache: false });
-            scrollToBottom(this.elements.chatArea);
+            this._applyStreamingBuffer(this._pendingStreamContent);
         });
     }
 
-    _requiresFullMarkdownRender(chunk) {
-        if (!chunk) return false;
-        if (chunk.length > 2000) return true;
-        const mdSyntax = /[`*_~#>\-\+\[\]\(\)!|\n]|^\s{0,3}\d+\.\s/;
-        return mdSyntax.test(chunk);
+    _applyStreamingBuffer(content) {
+        this._pendingStreamContent = null;
+        const prev = this._streamingRawContent || '';
+        if (content.length <= prev.length) {
+            return;
+        }
+
+        this._streamingRawContent = content;
+        this._streamingLastLength = content.length;
+
+        const newStableIndex = this._scanStreamingBoundaries(content);
+        if (newStableIndex > this._streamingStableIndex) {
+            const chunk = content.slice(this._streamingStableIndex, newStableIndex);
+            this._appendStreamingChunk(chunk);
+            this._streamingStableIndex = newStableIndex;
+        }
+
+        this._updateStreamingTail(content.slice(this._streamingStableIndex));
+        scrollToBottom(this.elements.chatArea);
+    }
+
+    _scanStreamingBoundaries(content) {
+        let lastStable = this._streamingStableIndex;
+        const len = content.length;
+        let i = this._streamingScanIndex;
+
+        for (; i < len; i++) {
+            if (content.startsWith('```', i)) {
+                const wasInFence = this._streamingInFence;
+                this._streamingInFence = !this._streamingInFence;
+                if (wasInFence) {
+                    // Closing fence - treat everything up to here as stable
+                    lastStable = i + 3;
+                }
+                i += 2;
+                continue;
+            }
+
+            if (this._streamingInFence) {
+                continue;
+            }
+
+            const char = content[i];
+            const nextChar = content[i + 1];
+
+            if (char === '\n' && nextChar === '\n') {
+                lastStable = i + 2;
+                i += 1;
+                continue;
+            }
+
+            if (char === '\n') {
+                const ahead = content.slice(i + 1, i + 6);
+                if (/^(?:#{1,6} |> |- |\* |\+ |\d+\. )/.test(ahead)) {
+                    lastStable = i + 1;
+                }
+            }
+        }
+
+        this._streamingScanIndex = len;
+        return lastStable;
+    }
+
+    _appendStreamingChunk(markdownChunk = '') {
+        if (!markdownChunk) return;
+        const html = this._getRenderedMarkdown(markdownChunk, { cache: false });
+        if (!html) return;
+
+        const template = document.createElement('template');
+        template.innerHTML = html;
+
+        if (this._streamingTailNode && this._streamingTailNode.parentNode === this._streamingElement) {
+            this._streamingElement.insertBefore(template.content, this._streamingTailNode);
+        } else {
+            this._streamingElement.appendChild(template.content);
+        }
+    }
+
+    _updateStreamingTail(text) {
+        if (!this._streamingElement) return;
+        if (!this._streamingTailNode) {
+            this._streamingTailNode = document.createElement('span');
+            this._streamingTailNode.dataset.streamingTail = 'true';
+            this._streamingElement.appendChild(this._streamingTailNode);
+        }
+
+        if (this._streamingTailText === text) {
+            return;
+        }
+
+        this._streamingTailText = text;
+        this._streamingTailNode.textContent = text;
     }
 
     /**

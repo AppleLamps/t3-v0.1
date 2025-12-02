@@ -63,6 +63,10 @@ class StateManager {
         // Track in-flight message loading operations per chat
         /** @type {Map<string, Promise<Object[]>>} */
         this._messageLoadPromises = new Map();
+
+        // Track tokens to invalidate stale load results when force-reloading
+        /** @type {Map<string, symbol>} */
+        this._messageLoadTokens = new Map();
     }
 
     /**
@@ -105,6 +109,7 @@ class StateManager {
         this.state.messagesLoadingByChatId = {};
         this.state.messagesErrorByChatId = {};
         this._messageLoadPromises.clear();
+        this._messageLoadTokens.clear();
 
         // Load chats with pagination (first page)
         this.state.isLoadingChats = true;
@@ -542,9 +547,13 @@ class StateManager {
             return this.state.messagesByChatId[chatId];
         }
 
-        if (this._messageLoadPromises.has(chatId)) {
+        if (!force && this._messageLoadPromises.has(chatId)) {
             return this._messageLoadPromises.get(chatId);
         }
+
+        const loadToken = Symbol('messageLoad');
+        this._messageLoadTokens.set(chatId, loadToken);
+        const isLatestLoad = () => this._messageLoadTokens.get(chatId) === loadToken;
 
         const loadPromise = (async () => {
             this.state.messagesLoadingByChatId[chatId] = true;
@@ -552,19 +561,27 @@ class StateManager {
             this._notify('messagesLoading', { chatId, isLoading: true });
             try {
                 const messages = await repository.getMessages(chatId);
-                this._setChatMessages(chatId, messages || []);
-                const cached = this.state.messagesByChatId[chatId];
-                this._notify('messagesLoaded', { chatId, messages: cached });
-                return cached;
+                if (isLatestLoad()) {
+                    this._setChatMessages(chatId, messages || []);
+                    const cached = this.state.messagesByChatId[chatId];
+                    this._notify('messagesLoaded', { chatId, messages: cached });
+                    return cached;
+                }
+                return messages || [];
             } catch (error) {
                 console.error('Failed to load messages:', error);
-                this.state.messagesErrorByChatId[chatId] = true;
-                this._notify('messagesError', { chatId, error });
+                if (isLatestLoad()) {
+                    this.state.messagesErrorByChatId[chatId] = true;
+                    this._notify('messagesError', { chatId, error });
+                }
                 throw error;
             } finally {
-                this.state.messagesLoadingByChatId[chatId] = false;
-                this._notify('messagesLoading', { chatId, isLoading: false });
-                this._messageLoadPromises.delete(chatId);
+                if (isLatestLoad()) {
+                    this.state.messagesLoadingByChatId[chatId] = false;
+                    this._notify('messagesLoading', { chatId, isLoading: false });
+                    this._messageLoadPromises.delete(chatId);
+                    this._messageLoadTokens.delete(chatId);
+                }
             }
         })();
 

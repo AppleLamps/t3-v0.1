@@ -3,9 +3,32 @@
 
 import { marked } from 'marked';
 import { markedHighlight } from 'marked-highlight';
-import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 import { showCodeRenderer } from './codeRenderer.js';
+
+let highlightModule = null;
+let highlightModulePromise = null;
+
+function ensureHighlightModule() {
+    if (highlightModule) {
+        return Promise.resolve(highlightModule);
+    }
+
+    if (!highlightModulePromise) {
+        highlightModulePromise = import('highlight.js')
+            .then((mod) => {
+                highlightModule = mod?.default || mod;
+                return highlightModule;
+            })
+            .catch((err) => {
+                console.error('Failed to load highlight.js', err);
+                highlightModulePromise = null;
+                return null;
+            });
+    }
+
+    return highlightModulePromise;
+}
 
 /**
  * Configure marked with our settings
@@ -15,15 +38,23 @@ export function configureMarked() {
     marked.use(markedHighlight({
         langPrefix: 'hljs language-',
         highlight(code, lang) {
-            if (lang && hljs.getLanguage(lang)) {
+            const hljsInstance = highlightModule;
+            if (!hljsInstance) {
+                // Kick off async load; fallback to plain code for this tick
+                ensureHighlightModule();
+                return code;
+            }
+
+            if (lang && hljsInstance.getLanguage(lang)) {
                 try {
-                    return hljs.highlight(code, { language: lang }).value;
+                    return hljsInstance.highlight(code, { language: lang }).value;
                 } catch (e) {
                     console.warn('Highlight error:', e);
                 }
             }
+
             try {
-                return hljs.highlightAuto(code).value;
+                return hljsInstance.highlightAuto(code).value;
             } catch (e) {
                 console.warn('Auto highlight error:', e);
             }
@@ -81,12 +112,15 @@ export function renderMarkdown(text) {
  * @param {Element} container 
  */
 export function highlightCodeBlocks(container) {
-    container.querySelectorAll('pre code').forEach((block) => {
-        try {
-            hljs.highlightElement(block);
-        } catch (e) {
-            console.warn('Code highlight error:', e);
-        }
+    ensureHighlightModule().then((hljsInstance) => {
+        if (!hljsInstance) return;
+        container.querySelectorAll('pre code').forEach((block) => {
+            try {
+                hljsInstance.highlightElement(block);
+            } catch (e) {
+                console.warn('Code highlight error:', e);
+            }
+        });
     });
 }
 

@@ -96,7 +96,10 @@ const actionHandlers = {
     saveSettings: ({ userId, data }) => saveSettings(userId, data),
 
     // Bulk operations
-    exportAll: ({ userId }) => exportAll(userId),
+    exportAll: ({ userId, res, data }) => exportAll(userId, {
+        res,
+        batchSize: data?.batchSize,
+    }),
     importAll: ({ userId, data }) => importAll(userId, data),
     clearAll: ({ userId }) => clearAll(userId),
 };
@@ -132,14 +135,29 @@ export default async function handler(req, res) {
     const payload = req.body;
     const { action, chatId, messageId, projectId, fileId, data: bodyData } = payload;
 
-    const result = await routeAction(action, {
-        userId: auth.userId,
-        chatId,
-        messageId,
-        projectId,
-        fileId,
-        data: bodyData,
-    });
+    let result;
+    try {
+        result = await routeAction(action, {
+            userId: auth.userId,
+            chatId,
+            messageId,
+            projectId,
+            fileId,
+            data: bodyData,
+            req,
+            res,
+        });
+    } catch (error) {
+        console.error('Route handler error:', error);
+        if (!res.headersSent) {
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+        return;
+    }
+
+    if (result?.streamed) {
+        return;
+    }
 
     if (result.error) {
         return res.status(result.status).json({ error: result.error });

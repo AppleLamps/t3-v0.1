@@ -399,12 +399,13 @@ export class Sidebar {
      * Render thread list
      */
     renderThreads() {
+        const isSearching = this._searchResults !== null;
         // Use search results if we're in search mode, otherwise use cached chats
-        const chats = this._searchResults || stateManager.allChats;
+        const chats = isSearching ? this._searchResults : stateManager.allChats;
         const groups = groupByDate(chats);
         const currentChatId = stateManager.currentChat?.id;
-        const hasMore = !this._searchResults && stateManager.hasMoreChats;
-        const isLoading = stateManager.isLoadingChats;
+        const hasMore = !isSearching && stateManager.hasMoreChats;
+        const isLoading = !isSearching && stateManager.isLoadingChats;
 
         let html = '';
 
@@ -473,7 +474,7 @@ export class Sidebar {
         }
 
         // Show search indicator if in search mode
-        if (this._searchResults) {
+        if (isSearching) {
             const searchCount = this._searchResults.length;
             html = `
                 <div class="px-3 py-2 text-xs text-lamp-muted border-b border-lamp-border mb-2">
@@ -502,7 +503,7 @@ export class Sidebar {
     _handleChatUpdated(chat) {
         if (!chat) return;
 
-        if (this._searchResults) {
+        if (this._searchResults !== null) {
             const index = this._searchResults.findIndex(c => c.id === chat.id);
             if (index !== -1) {
                 this._searchResults[index] = { ...this._searchResults[index], ...chat };
@@ -517,7 +518,7 @@ export class Sidebar {
     }
 
     _updateThreadItem(chat) {
-        if (!this.elements.threadList || this._searchResults) {
+        if (!this.elements.threadList || this._searchResults !== null) {
             return false;
         }
 
@@ -555,7 +556,7 @@ export class Sidebar {
     }
 
     _updateActiveChatHighlight() {
-        if (this._searchResults) {
+        if (this._searchResults !== null) {
             this.renderThreads();
             return true;
         }
