@@ -309,8 +309,12 @@ export class ChatArea {
                         this._openImageLightbox(url);
                     }
                 } else if (olderBtn) {
-                    this._virtualWindowSize = Math.min(this._virtualWindowSize + 100, (stateManager.currentChat?.messages || []).length);
-                    this.renderMessages();
+                    const chatId = stateManager.currentChat?.id;
+                    if (chatId) {
+                        stateManager.loadMessages(chatId, { appendEarlier: true }).catch(err =>
+                            console.error('Failed to load earlier messages:', err)
+                        );
+                    }
                 }
             });
         }
@@ -398,6 +402,11 @@ export class ChatArea {
                 }
             }),
             stateManager.subscribe('messagesLoaded', (state, payload) => {
+                if (payload?.chatId === stateManager.currentChat?.id) {
+                    this.renderMessages();
+                }
+            }),
+            stateManager.subscribe('messagesAppending', (state, payload) => {
                 if (payload?.chatId === stateManager.currentChat?.id) {
                     this.renderMessages();
                 }
@@ -893,13 +902,15 @@ export class ChatArea {
         const isLoadingMessages = stateManager.isChatMessagesLoading(chat.id);
         const hasLoadedMessages = stateManager.isChatMessagesLoaded(chat.id);
         const hasError = stateManager.hasChatMessagesError(chat.id);
+        const hasMoreMessages = stateManager.hasMoreMessages(chat.id);
+        const isAppending = stateManager.isChatMessagesAppending(chat.id);
 
         if (hasError) {
             this._showMessagesError();
             return;
         }
 
-        if (!hasLoadedMessages || isLoadingMessages) {
+        if (!hasLoadedMessages) {
             this._showMessagesLoading();
             return;
         }
@@ -908,9 +919,8 @@ export class ChatArea {
         this._hideMessagesError();
 
         const messages = chat.messages || stateManager.state.messagesByChatId[chat.id] || [];
-        const total = messages.length;
-        const startIndex = Math.max(0, total - this._virtualWindowSize);
-        const visibleMessages = messages.slice(startIndex);
+        const visibleMessages = messages;
+        this._virtualWindowSize = Math.max(this._virtualWindowSize, visibleMessages.length);
 
         if (messages.length === 0) {
             if (this._renderedMessageIds.size > 0) {
@@ -940,7 +950,6 @@ export class ChatArea {
         }
 
         // Append messages that are in state but not in DOM
-        // Don't animate on initial render to prevent cascading fade-ins
         const shouldAnimate = !this._isInitialRender;
 
         for (const msg of visibleMessages) {
@@ -954,8 +963,8 @@ export class ChatArea {
             this._isInitialRender = false;
         }
 
-        if (startIndex > 0) {
-            this._insertOlderMessagesNotice(startIndex);
+        if (hasMoreMessages) {
+            this._insertOlderMessagesNotice({ isAppending });
         } else {
             this._removeOlderMessagesNotice();
         }
@@ -963,7 +972,7 @@ export class ChatArea {
         scrollToBottom(this.elements.chatArea);
     }
 
-    _insertOlderMessagesNotice(hiddenCount) {
+    _insertOlderMessagesNotice({ isAppending = false } = {}) {
         const container = this.elements.messagesContainer;
         if (!container) return;
         let notice = container.querySelector('#olderMessagesNotice');
@@ -972,9 +981,29 @@ export class ChatArea {
             div.id = 'olderMessagesNotice';
             div.className = 'flex justify-center';
             div.innerHTML = `
-                <button id="olderMessagesBtn" class="mb-2 px-3 py-1 text-xs bg-lamp-input rounded-md hover:bg-lamp-hover transition-colors">Show earlier messages</button>
+                <button id="olderMessagesBtn" class="mb-2 px-3 py-1 text-xs bg-lamp-input rounded-md hover:bg-lamp-hover transition-colors flex items-center gap-2">
+                    <span>Load earlier messages</span>
+                </button>
             `;
             container.insertAdjacentElement('afterbegin', div);
+        }
+        const btn = container.querySelector('#olderMessagesBtn');
+        if (btn) {
+            btn.disabled = isAppending;
+            btn.classList.toggle('opacity-70', isAppending);
+            if (isAppending) {
+                btn.innerHTML = `
+                    <svg class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Loading...</span>
+                `;
+            } else {
+                btn.innerHTML = `
+                    <span>Load earlier messages</span>
+                `;
+            }
         }
     }
 
@@ -985,6 +1014,11 @@ export class ChatArea {
     _pruneOldMessages() {
         const container = this.elements.messagesContainer;
         if (!container) return;
+        const chatId = stateManager.currentChat?.id;
+        if (chatId && stateManager.hasMoreMessages(chatId)) {
+            // Do not prune when older messages are available so the user can load them
+            return;
+        }
         const nodes = Array.from(container.querySelectorAll('[data-message-id]'));
         if (nodes.length <= this._virtualWindowSize) return;
         const excess = nodes.length - this._virtualWindowSize;

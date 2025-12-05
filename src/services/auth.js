@@ -37,6 +37,8 @@ class AuthService {
 
             if (result.user) {
                 this._user = result.user;
+                // Mark token present (cookie-based); enables Neon repo selection
+                this._token = 'cookie_auth';
                 this._initialized = true;
                 this._notifyListeners();
             }

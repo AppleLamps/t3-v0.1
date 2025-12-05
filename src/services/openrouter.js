@@ -168,6 +168,7 @@ export class OpenRouterService {
                 });
             } else if (attachment.type === 'pdf') {
                 // PDF attachment - use file format per OpenRouter docs
+                // OpenRouter accepts URLs or base64 data URLs; pass through as provided
                 content.push({
                     type: 'file',
                     file: {
@@ -262,6 +263,9 @@ export class OpenRouterService {
 
         // Check if this is an image generation model
         const isImageGenModel = IMAGE_GENERATION_MODELS.includes(model);
+        const hasPdfAttachment =
+            attachments.some(att => att.type === 'pdf') ||
+            messages.some(m => Array.isArray(m.attachments) && m.attachments.some(att => att.type === 'pdf'));
 
         // Iterative retry loop (avoids recursion to prevent stack overflow)
         let retryCount = 0;
@@ -283,6 +287,20 @@ export class OpenRouterService {
                     usage: { include: true },
                     ...options,
                 };
+
+                // Add file-parser plugin automatically for PDFs if not provided
+                const plugins = Array.isArray(options.plugins) ? [...options.plugins] : [];
+                if (hasPdfAttachment && !plugins.some(p => p?.id === 'file-parser')) {
+                    plugins.push({
+                        id: 'file-parser',
+                        pdf: {
+                            engine: 'pdf-text', // default, free engine
+                        },
+                    });
+                }
+                if (plugins.length > 0) {
+                    requestBody.plugins = plugins;
+                }
 
                 // Add modalities for image generation models
                 if (isImageGenModel) {

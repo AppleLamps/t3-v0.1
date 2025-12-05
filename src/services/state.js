@@ -43,6 +43,8 @@ class StateManager {
             messagesByChatId: {},
             messagesLoadingByChatId: {},
             messagesErrorByChatId: {},
+            messagesPaginationByChatId: {},
+            messagesAppendingByChatId: {},
             // Pagination state
             hasMoreChats: false,
             isLoadingChats: false,
@@ -108,8 +110,11 @@ class StateManager {
         this.state.messagesByChatId = {};
         this.state.messagesLoadingByChatId = {};
         this.state.messagesErrorByChatId = {};
+        this.state.messagesPaginationByChatId = {};
+        this.state.messagesAppendingByChatId = {};
         this._messageLoadPromises.clear();
         this._messageLoadTokens.clear();
+        this._prefetchInFlight = false;
 
         // Load chats with pagination (first page)
         this.state.isLoadingChats = true;
@@ -147,6 +152,11 @@ class StateManager {
                 console.error('Failed to preload messages for initial chat:', error);
             });
         }
+
+        // Warm the cache for the most recent chats to speed up first interactions
+        this.prefetchChatMessages({ limit: 3 }).catch(error => {
+            console.error('Chat prefetch failed:', error);
+        });
 
         this._initialized = true;
         this._notify('initialized');
@@ -250,6 +260,16 @@ class StateManager {
     hasChatMessagesError(chatId) {
         if (!chatId) return false;
         return !!this.state.messagesErrorByChatId[chatId];
+    }
+
+    hasMoreMessages(chatId) {
+        if (!chatId) return false;
+        return !!this.state.messagesPaginationByChatId[chatId]?.hasMore;
+    }
+
+    isChatMessagesAppending(chatId) {
+        if (!chatId) return false;
+        return !!this.state.messagesAppendingByChatId[chatId];
     }
 
     // ==================
@@ -531,7 +551,7 @@ class StateManager {
      * @returns {Promise<Object[]>}
      */
     async loadMessages(chatId, options = {}) {
-        const { force = false } = options;
+        const { force = false, appendEarlier = false, limit = 50 } = options;
         if (!chatId) return [];
 
         const chat = this.state.chats[chatId];
@@ -543,10 +563,23 @@ class StateManager {
             return this._ensureMessageCache(chatId);
         }
 
-        if (!force && this.isChatMessagesLoaded(chatId)) {
+        const pagination = this.state.messagesPaginationByChatId[chatId] || {
+            fetched: Array.isArray(this.state.messagesByChatId[chatId]) ? this.state.messagesByChatId[chatId].length : 0,
+            total: null,
+            hasMore: true,
+        };
+
+        // If already loaded and not forcing or appending, reuse cache
+        if (!appendEarlier && !force && this.isChatMessagesLoaded(chatId)) {
             return this.state.messagesByChatId[chatId];
         }
 
+        // If requesting earlier but no more pages, return current cache
+        if (appendEarlier && !pagination.hasMore) {
+            return this.state.messagesByChatId[chatId] || [];
+        }
+
+        // Deduplicate in-flight requests per chat
         if (!force && this._messageLoadPromises.has(chatId)) {
             return this._messageLoadPromises.get(chatId);
         }
@@ -556,18 +589,52 @@ class StateManager {
         const isLatestLoad = () => this._messageLoadTokens.get(chatId) === loadToken;
 
         const loadPromise = (async () => {
-            this.state.messagesLoadingByChatId[chatId] = true;
-            delete this.state.messagesErrorByChatId[chatId];
-            this._notify('messagesLoading', { chatId, isLoading: true });
+            if (appendEarlier) {
+                this.state.messagesAppendingByChatId[chatId] = true;
+                this._notify('messagesAppending', { chatId, isAppending: true });
+            } else {
+                this.state.messagesLoadingByChatId[chatId] = true;
+                delete this.state.messagesErrorByChatId[chatId];
+                this._notify('messagesLoading', { chatId, isLoading: true });
+            }
+
             try {
-                const messages = await repository.getMessages(chatId);
+                const result = await repository.getMessages(chatId, {
+                    limit,
+                    offset: appendEarlier ? pagination.fetched : 0,
+                });
+
+                const messages = result?.messages || [];
+                const hasMore = !!result?.hasMore;
+                const total = typeof result?.total === 'number' ? result.total : pagination.total;
+
                 if (isLatestLoad()) {
-                    this._setChatMessages(chatId, messages || []);
+                    if (appendEarlier) {
+                        const existing = this._ensureMessageCache(chatId);
+                        const merged = [...messages, ...existing];
+                        this._setChatMessages(chatId, merged);
+                        this.state.messagesPaginationByChatId[chatId] = {
+                            fetched: merged.length,
+                            total: total ?? merged.length,
+                            hasMore,
+                            limit,
+                        };
+                    } else {
+                        this._setChatMessages(chatId, messages);
+                        this.state.messagesPaginationByChatId[chatId] = {
+                            fetched: messages.length,
+                            total: total ?? messages.length,
+                            hasMore,
+                            limit,
+                        };
+                    }
+
                     const cached = this.state.messagesByChatId[chatId];
-                    this._notify('messagesLoaded', { chatId, messages: cached });
+                    this._notify('messagesLoaded', { chatId, messages: cached, appendEarlier });
                     return cached;
                 }
-                return messages || [];
+
+                return messages;
             } catch (error) {
                 console.error('Failed to load messages:', error);
                 if (isLatestLoad()) {
@@ -577,8 +644,13 @@ class StateManager {
                 throw error;
             } finally {
                 if (isLatestLoad()) {
-                    this.state.messagesLoadingByChatId[chatId] = false;
-                    this._notify('messagesLoading', { chatId, isLoading: false });
+                    if (appendEarlier) {
+                        this.state.messagesAppendingByChatId[chatId] = false;
+                        this._notify('messagesAppending', { chatId, isAppending: false });
+                    } else {
+                        this.state.messagesLoadingByChatId[chatId] = false;
+                        this._notify('messagesLoading', { chatId, isLoading: false });
+                    }
                     this._messageLoadPromises.delete(chatId);
                     this._messageLoadTokens.delete(chatId);
                 }
@@ -587,6 +659,40 @@ class StateManager {
 
         this._messageLoadPromises.set(chatId, loadPromise);
         return loadPromise;
+    }
+
+    /**
+     * Prefetch messages for a limited set of recent chats to reduce perceived latency
+     * @param {{ limit?: number }} options
+     * @returns {Promise<void>}
+     */
+    async prefetchChatMessages(options = {}) {
+        const { limit = 3 } = options;
+
+        // Prevent overlapping prefetch runs
+        if (this._prefetchInFlight) return;
+        this._prefetchInFlight = true;
+
+        try {
+            // Sort chats by most recently updated
+            const chats = this.allChats
+                .filter(chat => !!chat.id && !chat.id.startsWith('temp_'))
+                .sort((a, b) => b.updatedAt - a.updatedAt)
+                .slice(0, limit);
+
+            for (const chat of chats) {
+                // Skip if already loaded or loading
+                if (this.isChatMessagesLoaded(chat.id) || this.isChatMessagesLoading(chat.id)) {
+                    continue;
+                }
+                // Fire-and-forget; existing loadMessages handles dedupe/token
+                this.loadMessages(chat.id).catch(err => {
+                    console.error('Prefetch loadMessages failed:', err);
+                });
+            }
+        } finally {
+            this._prefetchInFlight = false;
+        }
     }
 
     /**
@@ -652,6 +758,8 @@ class StateManager {
 
             // Replace existing chats (clear non-project chats when filtering by project)
             this.state.chats = {};
+            this.state.messagesPaginationByChatId = {};
+            this.state.messagesAppendingByChatId = {};
             for (const chat of result.chats) {
                 this._storeChatMetadata(chat);
             }
@@ -663,6 +771,11 @@ class StateManager {
 
             this._notify('chatsReloaded', result);
             this._notify('chatsLoading', false);
+
+            // Warm cache for the new project scope to make first clicks feel instant
+            this.prefetchChatMessages({ limit: 3 }).catch(error => {
+                console.error('Chat prefetch failed:', error);
+            });
         } catch (error) {
             console.error('Failed to reload chats:', error);
             this.state.isLoadingChats = false;
@@ -721,6 +834,8 @@ class StateManager {
         delete this.state.messagesByChatId[chatId];
         delete this.state.messagesLoadingByChatId[chatId];
         delete this.state.messagesErrorByChatId[chatId];
+        delete this.state.messagesPaginationByChatId[chatId];
+        delete this.state.messagesAppendingByChatId[chatId];
         this._messageLoadPromises.delete(chatId);
 
         // If deleted current chat, switch to another immediately
@@ -1150,6 +1265,8 @@ class StateManager {
             this.state.messagesByChatId = {};
             this.state.messagesLoadingByChatId = {};
             this.state.messagesErrorByChatId = {};
+            this.state.messagesPaginationByChatId = {};
+            this.state.messagesAppendingByChatId = {};
             this._messageLoadPromises.clear();
             this.state.currentChatId = null;
             const newChat = await this.createChat();

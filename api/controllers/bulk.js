@@ -217,30 +217,37 @@ export async function exportAll(userId, options = {}) {
 
 export async function importAll(userId, data = {}) {
     try {
-        if (data.chats) {
-            for (const chat of Object.values(data.chats)) {
-                const createResult = await createChat(userId, { title: chat.title });
-                if (createResult.data && chat.messages) {
-                    for (const message of chat.messages) {
-                        await addMessage(userId, createResult.data.id, {
-                            role: message.role,
-                            content: message.content,
-                            model: message.model,
-                        });
+        await sql`BEGIN`;
+        try {
+            if (data.chats) {
+                for (const chat of Object.values(data.chats)) {
+                    const createResult = await createChat(userId, { title: chat.title });
+                    if (createResult.data && chat.messages) {
+                        for (const message of chat.messages) {
+                            await addMessage(userId, createResult.data.id, {
+                                role: message.role,
+                                content: message.content,
+                                model: message.model,
+                            });
+                        }
                     }
                 }
             }
-        }
 
-        if (data.settings) {
-            await saveSettings(userId, {
-                selectedModel: data.settings.selectedModel,
-                enabledModels: data.settings.enabledModels,
-                webSearchEnabled: data.settings.webSearchEnabled,
-            });
-        }
+            if (data.settings) {
+                await saveSettings(userId, {
+                    selectedModel: data.settings.selectedModel,
+                    enabledModels: data.settings.enabledModels,
+                    webSearchEnabled: data.settings.webSearchEnabled,
+                });
+            }
 
-        return { data: { success: true }, status: 200 };
+            await sql`COMMIT`;
+            return { data: { success: true }, status: 200 };
+        } catch (inner) {
+            await sql`ROLLBACK`;
+            throw inner;
+        }
     } catch (error) {
         console.error('Import error:', error);
         return { error: 'Failed to import data', status: 500 };

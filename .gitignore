@@ -30,6 +30,8 @@ out/
 .settings/
 *.sublime-project
 *.sublime-workspace
+.cursor/
+.memory/
 
 # OS files
 .DS_Store

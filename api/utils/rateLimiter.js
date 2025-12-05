@@ -43,7 +43,11 @@ const RATE_LIMIT_CONFIG = {
     // Chat/data operations
     chat: {
         windowMs: 60 * 1000, // 1 minute
-        maxRequests: 60, // 60 chat requests per minute
+        maxRequests: 600, // High ceiling to avoid throttling normal use
+    },
+    data: {
+        windowMs: 60 * 1000, // 1 minute
+        maxRequests: 300, // High ceiling for CRUD/import/export bursts
     },
 };
 
@@ -59,6 +63,23 @@ const redis = isRedisConfigured ? new Redis({
     url: REDIS_URL,
     token: REDIS_TOKEN,
 }) : null;
+
+// In-memory fallback limiter (per action)
+const fallbackStore = new Map();
+function fallbackIncrement(clientIP, action = 'default') {
+    const config = getConfigForAction(action);
+    const now = Date.now();
+    const key = `${action}:${clientIP}`;
+    const current = fallbackStore.get(key);
+    if (!current || now > current.resetTime) {
+        const data = { count: 1, resetTime: now + config.windowMs, config };
+        fallbackStore.set(key, data);
+        return data;
+    }
+    const updated = { ...current, count: current.count + 1, config };
+    fallbackStore.set(key, updated);
+    return updated;
+}
 
 /**
  * Rate limit data structure stored in Redis
@@ -241,18 +262,14 @@ function createRateLimitMiddleware(action = 'default') {
 
         try {
             // Check if Redis is configured
-            if (!isRedisConfigured) {
-                console.warn('Upstash Redis not configured, allowing all requests');
-                return next();
+            let rateLimitData = null;
+            if (isRedisConfigured) {
+                rateLimitData = await incrementRateLimit(clientIP, action);
             }
 
-            // Get current rate limit data for this action
-            let rateLimitData = await incrementRateLimit(clientIP, action);
-
             if (!rateLimitData) {
-                // Redis error - allow request but log warning
-                console.warn('Rate limit Redis error, allowing request for IP:', clientIP);
-                return next();
+                // Fall back to in-memory limiter
+                rateLimitData = fallbackIncrement(clientIP, action);
             }
 
             const config = rateLimitData.config;

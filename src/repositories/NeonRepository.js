@@ -139,13 +139,20 @@ export class NeonRepository extends BaseRepository {
         }
     }
 
-    async getMessages(chatId) {
+    async getMessages(chatId, options = {}) {
         try {
-            const messages = await this._request('getMessages', { chatId });
-            return messages || [];
+            const payload = {
+                chatId,
+                data: {
+                    limit: options.limit,
+                    offset: options.offset,
+                },
+            };
+            const result = await this._request('getMessages', payload);
+            return result || { messages: [], hasMore: false, total: 0 };
         } catch (error) {
             console.error('NeonRepository.getMessages error:', error);
-            return [];
+            return { messages: [], hasMore: false, total: 0 };
         }
     }
 

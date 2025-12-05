@@ -174,6 +174,33 @@ export async function addProjectFile(userId, projectId, fileData = {}) {
             return { error: 'Invalid project ID format', status: 400 };
         }
 
+        const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2MB
+        const allowedTypes = new Set([
+            'text/plain',
+            'application/pdf',
+            'text/markdown',
+            'application/json',
+        ]);
+
+        if (fileData.size && Number(fileData.size) > MAX_FILE_BYTES) {
+            return { error: 'File too large (max 2MB)', status: 400 };
+        }
+
+        if (fileData.type && !allowedTypes.has(fileData.type)) {
+            return { error: 'Unsupported file type', status: 400 };
+        }
+
+        if (fileData.data) {
+            try {
+                const decodedSize = Buffer.from(fileData.data, 'base64').byteLength;
+                if (decodedSize > MAX_FILE_BYTES) {
+                    return { error: 'File data exceeds allowed size', status: 400 };
+                }
+            } catch (e) {
+                return { error: 'Invalid file data encoding', status: 400 };
+            }
+        }
+
         const ownership = await sql`
             SELECT id FROM projects WHERE id = ${projectId} AND user_id = ${userId}
         `;

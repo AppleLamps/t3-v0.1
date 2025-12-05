@@ -5,6 +5,8 @@
 
 import { neon } from '@neondatabase/serverless';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import { createRateLimitMiddleware } from './utils/rateLimiter.js';
 
 // Initialize Neon client
 const sql = neon(process.env.DATABASE_URL);
@@ -17,6 +19,26 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 // OpenRouter API URL
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const REQUEST_TIMEOUT_MS = 30000;
+const ENC_KEY = (process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || '').padEnd(32, '0').slice(0, 32);
+const ENC_IV_LEN = 16;
+
+// High-ceiling rate limiter for chat proxy
+const chatRateLimit = createRateLimitMiddleware('chat');
+
+function decrypt(value) {
+    if (!value || typeof value !== 'string' || !value.includes(':')) return '';
+    try {
+        const [ivHex, dataHex] = value.split(':');
+        const iv = Buffer.from(ivHex, 'hex');
+        const encryptedText = Buffer.from(dataHex, 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-ctr', Buffer.from(ENC_KEY), iv);
+        const decrypted = Buffer.concat([decipher.update(encryptedText), decipher.final()]);
+        return decrypted.toString('utf8');
+    } catch (e) {
+        return '';
+    }
+}
 
 /**
  * Get token from request (header or cookies)
@@ -76,7 +98,9 @@ async function getUserApiKey(userId) {
         const result = await sql`
             SELECT api_key FROM user_settings WHERE user_id = ${userId}
         `;
-        return result.length > 0 ? result[0].api_key : null;
+        if (result.length === 0) return null;
+        const raw = result[0].api_key;
+        return decrypt(raw) || raw || null;
     } catch (error) {
         console.error('Error fetching API key:', error);
         return null;
@@ -92,6 +116,14 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method not allowed' });
     }
+
+    // Apply rate limiting (high ceiling to avoid throttling normal users)
+    await new Promise((resolve, reject) => {
+        chatRateLimit(req, res, (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
 
     // Verify authentication
     const authResult = verifyToken(req);
@@ -116,6 +148,8 @@ export default async function handler(req, res) {
 
     try {
         // Make request to OpenRouter
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
         const openRouterResponse = await fetch(OPENROUTER_API_URL, {
             method: 'POST',
             headers: {
@@ -130,7 +164,9 @@ export default async function handler(req, res) {
                 stream,
                 ...options,
             }),
+            signal: controller.signal,
         });
+        clearTimeout(timeout);
 
         if (!openRouterResponse.ok) {
             const errorData = await openRouterResponse.json().catch(() => ({}));
@@ -171,6 +207,8 @@ export default async function handler(req, res) {
         }
     } catch (error) {
         console.error('Chat proxy error:', error);
-        return res.status(500).json({ error: 'Failed to process chat request' });
+        const status = error.name === 'AbortError' ? 504 : 500;
+        const message = error.name === 'AbortError' ? 'Upstream timeout' : 'Failed to process chat request';
+        return res.status(status).json({ error: message });
     }
 }

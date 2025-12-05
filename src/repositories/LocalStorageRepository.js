@@ -368,9 +368,22 @@ export class LocalStorageRepository extends BaseRepository {
         return updatedMessage;
     }
 
-    async getMessages(chatId) {
+    async getMessages(chatId, options = {}) {
         await this._ensureMigrated();
-        return await fileStorage.getMessagesByChat(chatId);
+        const limit = Math.min(Math.max(parseInt(options.limit ?? 50, 10) || 50, 1), 200);
+        const offset = Math.max(parseInt(options.offset ?? 0, 10) || 0, 0);
+
+        const all = await fileStorage.getMessagesByChat(chatId) || [];
+        // Ensure chronological order
+        const sorted = [...all].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+        const total = sorted.length;
+
+        const end = Math.max(total - offset, 0);
+        const start = Math.max(end - limit, 0);
+        const page = sorted.slice(start, end);
+        const hasMore = start > 0;
+
+        return { messages: page, hasMore, total };
     }
 
     // ==================

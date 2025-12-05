@@ -101,8 +101,11 @@ export async function updateMessage(userId, chatId, messageId, updates = {}) {
     }
 }
 
-export async function getMessages(userId, chatId) {
+export async function getMessages(userId, chatId, options = {}) {
     try {
+        const limit = Math.min(Math.max(parseInt(options.limit ?? 50, 10) || 50, 1), 200);
+        const offset = Math.max(parseInt(options.offset ?? 0, 10) || 0, 0);
+
         // Validate chatId format
         if (!isValidUUID(chatId)) {
             return { error: 'Invalid chat ID format', status: 400 };
@@ -116,14 +119,27 @@ export async function getMessages(userId, chatId) {
             return { error: 'Chat not found', status: 404 };
         }
 
-        const messages = await sql`
+        const countResult = await sql`
+            SELECT COUNT(*) AS count
+            FROM messages
+            WHERE chat_id = ${chatId}
+        `;
+        const total = parseInt(countResult[0]?.count || 0, 10);
+
+        const messagesDesc = await sql`
             SELECT id, role, content, model, stats, generated_images as "generatedImages", created_at as "createdAt"
             FROM messages
             WHERE chat_id = ${chatId}
-            ORDER BY created_at ASC
+            ORDER BY created_at DESC
+            LIMIT ${limit}
+            OFFSET ${offset}
         `;
 
-        return { data: messages, status: 200 };
+        // Return messages in chronological order for the UI
+        const messages = messagesDesc.reverse();
+        const hasMore = offset + messagesDesc.length < total;
+
+        return { data: { messages, hasMore, total }, status: 200 };
     } catch (error) {
         console.error('Get messages error:', error);
         return { error: 'Failed to fetch messages', status: 500 };

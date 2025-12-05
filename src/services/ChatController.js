@@ -147,27 +147,35 @@ export class ChatController {
         // Build context from project files
         let filesContext = '';
         if (project.files && project.files.length > 0) {
-            const textFiles = project.files.filter(f =>
+            const MAX_TOTAL_BYTES = 16 * 1024; // 16KB cap to avoid prompt bloat
+            const MAX_PER_FILE = 8 * 1024; // 8KB per file
+            const allowedText = project.files.filter(f =>
                 f.type?.startsWith('text/') ||
                 f.name?.endsWith('.txt') ||
                 f.name?.endsWith('.md') ||
                 f.name?.endsWith('.json')
             );
 
-            if (textFiles.length > 0) {
+            let remaining = MAX_TOTAL_BYTES;
+            if (allowedText.length > 0) {
                 filesContext = '## Project Knowledge Base\n\nThe following files have been provided as context:\n\n';
-                for (const file of textFiles) {
+                for (const file of allowedText) {
+                    if (remaining <= 0) break;
                     try {
                         // Decode base64 data if present
                         let content = '';
                         if (file.data) {
-                            // Handle data URL format
                             const base64Data = file.data.includes(',')
                                 ? file.data.split(',')[1]
                                 : file.data;
                             content = atob(base64Data);
                         }
-                        filesContext += `### ${file.name}\n\`\`\`\n${content}\n\`\`\`\n\n`;
+                        let trimmed = content.slice(0, Math.min(MAX_PER_FILE, remaining));
+                        remaining -= trimmed.length;
+                        if (content.length > trimmed.length) {
+                            trimmed += '\n...[truncated]';
+                        }
+                        filesContext += `### ${file.name}\n\`\`\`\n${trimmed}\n\`\`\`\n\n`;
                     } catch (e) {
                         console.error('Failed to decode file:', file.name, e);
                     }

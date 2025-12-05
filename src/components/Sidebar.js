@@ -263,6 +263,17 @@ export class Sidebar {
                     this._onSelectChat(threadBtn.dataset.chatId);
                 }
             });
+
+            // Prefetch messages on hover to reduce perceived latency on click
+            this.on(this.elements.threadList, 'pointerenter', (e) => {
+                const threadBtn = e.target.closest('[data-chat-id]');
+                if (!threadBtn) return;
+                const chatId = threadBtn.dataset.chatId;
+                if (!chatId || chatId.startsWith('temp_')) return;
+                if (stateManager.isChatMessagesLoaded(chatId) || stateManager.isChatMessagesLoading(chatId)) return;
+                // Fire-and-forget prefetch; loadMessages dedupes per chatId
+                stateManager.loadMessages(chatId).catch(err => console.error('Prefetch on hover failed:', err));
+            });
         }
 
         // Subscribe to auth changes

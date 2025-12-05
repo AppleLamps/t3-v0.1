@@ -63,6 +63,32 @@ function generateTokenPair(user) {
 
 // Check if running in production (Vercel sets this)
 const isProduction = process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+
+function isOriginAllowed(origin) {
+    if (!origin) return true; // allow same-origin / non-browser contexts
+    if (ALLOWED_ORIGINS.length === 0) return true;
+    return ALLOWED_ORIGINS.includes(origin);
+}
+
+function setCors(res, origin) {
+    if (origin && isOriginAllowed(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+}
+
+function validateCsrf(req, res) {
+    const origin = req.headers.origin || req.headers.referer;
+    if (origin && !isOriginAllowed(origin)) {
+        res.status(403).json({ error: 'Origin not allowed' });
+        return false;
+    }
+    return true;
+}
 
 /**
  * Set authentication cookies
@@ -359,15 +385,16 @@ async function handleLogout() {
  * Vercel serverless handler with rate limiting and cookie authentication
  */
 export default async function handler(req, res) {
-    // Set CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    const origin = req.headers.origin || req.headers.referer;
+    setCors(res, origin);
 
     // Handle preflight
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
+    }
+
+    if (!validateCsrf(req, res)) {
+        return;
     }
 
     // Apply rate limiting middleware
