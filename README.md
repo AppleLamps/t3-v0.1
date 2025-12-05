@@ -39,14 +39,14 @@ A modern, full-featured AI chat application inspired by [T3 Chat](https://t3.cha
 - **Custom Instructions** — System prompts applied to all chats within a project
 - **File Attachments** — Upload and manage project-specific files (PDFs, text, etc.) for context
 - **Project Dashboard** — Manage project settings, files, and associated chats
-- **Visibility Control** — Private projects or shareable with links
+- **Visibility Control** — Private projects; shared links planned
 
 ### Data & Privacy
 
 - **Dual Storage Modes** — LocalStorage for guests, Neon PostgreSQL for authenticated users
 - **Chat History** — Persistent conversations with search and date grouping
 - **Privacy-First** — Your API key stays in your browser (guests) or is encrypted server-side (authenticated users)
-- **Direct API Calls** — Messages go directly to OpenRouter, not through any intermediary
+- **Direct API Calls / Proxy** — Guests call OpenRouter directly; authenticated users proxy through `/api/chat` with server-side key
 
 ## 🚀 Quick Start
 
@@ -99,8 +99,10 @@ npm run preview
 |----------|-------------|----------|
 | `DATABASE_URL` | Neon PostgreSQL connection string | Yes (for auth) |
 | `JWT_SECRET` | Secret key for JWT token signing | Yes (for auth) |
+| `ENCRYPTION_KEY` | 32-char key for encrypting stored API keys (fallback: `JWT_SECRET`) | Recommended |
 | `UPSTASH_REDIS_REST_URL` | Upstash Redis URL for rate limiting | Yes (for rate limiting) |
 | `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis token | Yes (for rate limiting) |
+| `ALLOWED_ORIGINS` | Comma-separated origins allowed for CORS | Recommended |
 
 ### Database Setup
 
@@ -118,15 +120,19 @@ lampchat/
 ├── package.json                # Dependencies & scripts
 │
 ├── api/                        # Vercel Serverless Functions
-│   ├── auth.js                 # Authentication (signup/login/verify)
+│   ├── auth.js                 # Authentication (signup/login/verify/refresh/logout)
 │   ├── chat.js                 # Chat proxy for authenticated users (keeps API key server-side)
-│   ├── data.js                 # Data operations (CRUD for chats, messages, settings)
+│   ├── data.js                 # Data operations (CRUD/export/import/settings)
+│   ├── controllers/            # Modular handlers for data.js actions
+│   ├── lib/
+│   │   └── sql.js              # Neon SQL helper + validation
 │   └── utils/
 │       └── rateLimiter.js      # Rate limiting with Upstash Redis
 │
 ├── db/
 │   └── schema.sql              # Neon PostgreSQL schema
 │
+├── dist/                       # Production build output (Vite)
 └── src/
     ├── config/                 # Configuration
     │   ├── constants.js        # App constants & storage keys
@@ -172,6 +178,7 @@ lampchat/
     │   ├── files.js            # File processing (Base64 conversion)
     │   └── index.js
     │
+    ├── style.css               # Global styles entry
     └── styles/
         └── main.css            # Custom styles
 ```
@@ -253,13 +260,15 @@ this.openRouter.setApiKey('');
 
 ### Rate Limiting Architecture
 
-Distributed rate limiting prevents abuse using Upstash Redis:
+Distributed rate limiting prevents abuse using Upstash Redis (per IP):
 
-```javascript
-// Rate limits are enforced per IP address and action type
-const rateLimitMiddleware = createRateLimitMiddleware('chat');
-// Limits: 60 chat requests per minute, 10 auth attempts per minute, etc.
-```
+- chat: 600/min
+- data (CRUD/export/import): 300/min
+- login: 10/min
+- signup: 5/min
+- verify: 120/min
+- refresh: 30/min
+- logout: 60/min
 
 ## 🎨 Customization
 
@@ -343,7 +352,7 @@ export default {
 
 - [@neondatabase/serverless](https://neon.tech) `^0.10.4` — Neon PostgreSQL client
 - [@upstash/redis](https://upstash.com/docs/redis) `^1.35.7` — Distributed rate limiting
-- [@upstash/vector](https://upstash.com/docs/vector) `^1.2.2` — Vector operations
+- [@upstash/vector](https://upstash.com/docs/vector) `^1.2.2` — Included for future vector features (not currently used)
 - [bcryptjs](https://www.npmjs.com/package/bcryptjs) `^2.4.3` — Password hashing
 - [jsonwebtoken](https://www.npmjs.com/package/jsonwebtoken) `^9.0.2` — JWT authentication
 - [Highlight.js](https://highlightjs.org/) `^11.9.0` — Code highlighting
@@ -371,7 +380,7 @@ LampChat supports 15+ AI models via OpenRouter:
 - **API Key Storage**: Your OpenRouter API key is stored in localStorage (guest) or encrypted in Neon (authenticated)
 - **Password Security**: Passwords are hashed with bcrypt (10 salt rounds)
 - **JWT Tokens**: Secure authentication with 7-day expiry
-- **Direct API Calls**: Chat messages go directly to OpenRouter, not through our servers
+- **Proxy for Auth Users**: When logged in, chat requests go through `/api/chat` so your API key stays server-side; guests call OpenRouter directly from the browser.
 - **Rate Limiting**: Distributed rate limiting with Upstash Redis to prevent abuse
 - **No Analytics**: No tracking or data collection
 - **XSS Protection**: All rendered content sanitized with DOMPurify
